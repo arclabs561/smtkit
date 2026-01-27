@@ -72,3 +72,9 @@ and the capability probe (`get_proof`) so you can **capture** proof objects for 
 
 This is **not** a proof checker: verification of solver proofs (e.g. Alethe proof checking) is a separate layer.
 
+## Versioning + pinning policy (recommended)
+
+- **Apps should pin**: if you build a tool like `proofpatch`, prefer `smtkit = "0.x.y"` (crates.io) and commit `Cargo.lock`.
+- **Libraries can float**: if you’re publishing a library, prefer semver ranges and do not commit `Cargo.lock`.
+- **Pre-release testing**: for unreleased changes, temporarily pin a git tag (e.g. `v0.1.1`) or a git rev, then switch back to crates.io on release.
+
