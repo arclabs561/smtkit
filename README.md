@@ -1,5 +1,9 @@
 # smtkit
 
+[![CI](https://github.com/arclabs561/smtkit/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/smtkit/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/smtkit.svg)](https://crates.io/crates/smtkit)
+[![docs.rs](https://docs.rs/smtkit/badge.svg)](https://docs.rs/smtkit)
+
 `smtkit` is a small Rust toolkit for **reproducible SMT workflows**:
 
 - **Build** constraints (typed IR in `smtkit-core`).
