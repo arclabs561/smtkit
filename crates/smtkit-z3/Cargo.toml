@@ -1,0 +1,20 @@
+[package]
+name = "smtkit-z3"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Z3 in-process backend for smtkit (feature-gated)"
+publish = true
+
+[dependencies]
+thiserror = "2"
+smtkit-core = { path = "../smtkit-core" }
+z3 = { version = "0.19.7", default-features = false }
+
+[features]
+default = []
+# Build Z3 from source as part of the build (no external solver needed).
+bundled = ["z3/bundled"]
+# Fetch a prebuilt Z3 from GitHub releases at build time (network).
+gh-release = ["z3/gh-release"]
+

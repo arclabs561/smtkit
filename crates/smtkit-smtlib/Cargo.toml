@@ -1,0 +1,21 @@
+[package]
+name = "smtkit-smtlib"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "SMT-LIB2 serialization + solver I/O backend for smtkit"
+publish = true
+
+[dependencies]
+thiserror = "2"
+smtkit-core = { path = "../smtkit-core" }
+shell-words = "1.1.0"
+
+# Optional: higher-level SMT-LIB session wrapper (incremental push/pop etc.)
+rsmt2 = { version = "0.16.2", optional = true }
+
+[features]
+default = []
+z3-bin = []
+rsmt2-session = ["dep:rsmt2"]
+

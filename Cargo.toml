@@ -1,0 +1,30 @@
+[package]
+name = "smtkit"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Facade crate for SMT constraint IR + SMT-LIB backends"
+publish = true
+
+[dependencies]
+anyhow = "1"
+thiserror = "2"
+smtkit-core = { path = "crates/smtkit-core" }
+smtkit-smtlib = { path = "crates/smtkit-smtlib" }
+smtkit-z3 = { path = "crates/smtkit-z3", optional = true }
+
+[features]
+# No solver integration by default: pure SMT-LIB2 script generation.
+default = []
+# Enable running Z3 via an external `z3` binary.
+z3-bin = ["smtkit-smtlib/z3-bin"]
+## In-process Z3 backend (Rust bindings).
+z3-inproc = ["dep:smtkit-z3"]
+# Build Z3 from source as part of `cargo build` (no external solver needed).
+z3-inproc-bundled = ["z3-inproc", "smtkit-z3/bundled"]
+# Fetch a prebuilt Z3 from GitHub releases at build time (network).
+z3-inproc-gh-release = ["z3-inproc", "smtkit-z3/gh-release"]
+# Convenience: enable an in-process Z3 that does not depend on a system `z3` binary.
+# (This uses `gh-release`, which requires network access during build.)
+z3-auto = ["z3-inproc-gh-release"]
+
