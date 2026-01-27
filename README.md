@@ -59,7 +59,7 @@ fn main() {
     s.check_sat();
     s.get_model();
 
-    print!("{}", s.to_string());
+    print!("{s}");
 }
 ```
 

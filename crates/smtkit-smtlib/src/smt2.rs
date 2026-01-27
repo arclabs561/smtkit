@@ -127,15 +127,15 @@ impl Script {
         self.items
             .push(Sexp::list(vec![Sexp::atom("minimize"), term]));
     }
+}
 
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for Script {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Keep it readable: one item per line. Sexp::Atom is used for comments.
-        let mut out = String::new();
         for it in &self.items {
-            out.push_str(&it.to_string());
-            out.push('\n');
+            writeln!(f, "{}", it)?;
         }
-        out
+        Ok(())
     }
 }
 

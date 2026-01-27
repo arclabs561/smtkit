@@ -73,7 +73,7 @@ fn extract_first_response(text: &str) -> Option<String> {
             Some(';') => {
                 // SMT-LIB line comment.
                 it.next();
-                while let Some(c) = it.next() {
+                for c in it.by_ref() {
                     if c == '\n' {
                         break;
                     }
@@ -108,7 +108,7 @@ fn extract_first_response(text: &str) -> Option<String> {
                 ScanState::Normal => {
                     // SMT-LIB line comments: ignore until newline (but keep the newline for structure).
                     if ch == ';' {
-                        while let Some(c) = it.next() {
+                        for c in it.by_ref() {
                             if c == '\n' {
                                 out.push('\n');
                                 break;
