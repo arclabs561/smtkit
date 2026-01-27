@@ -34,13 +34,14 @@ SMT integrations tend to go wrong in the same ways:
 If you have a solver on PATH (e.g. `z3`), run:
 
 ```bash
-cargo run -p smtkit-ci -- probe
+cargo install --path crates/smtkit-ci --bin smtkit-ci --force
+smtkit-ci probe
 ```
 
-If you prefer the shorter `smtkit-ci ...` form, install it from this repo once:
+If you prefer to run from this repo without installing:
 
 ```bash
-cargo install --path crates/smtkit-ci --bin smtkit-ci --force
+cargo run -p smtkit-ci -- probe
 ```
 
 This prints JSON like:
@@ -56,15 +57,15 @@ This prints JSON like:
 You can also generate repro scripts:
 
 ```bash
-cargo run -p smtkit-ci -- probe --emit-demo-smt2 --demo-kind sat
-cargo run -p smtkit-ci -- probe --emit-demo-smt2 --demo-kind unsat-core
-cargo run -p smtkit-ci -- probe --emit-demo-smt2 --demo-kind unsat-proof
+smtkit-ci probe --emit-demo-smt2 --demo-kind sat
+smtkit-ci probe --emit-demo-smt2 --demo-kind unsat-core
+smtkit-ci probe --emit-demo-smt2 --demo-kind unsat-proof
 ```
 
 Or write artifacts to disk:
 
 ```bash
-cargo run -p smtkit-ci -- probe --output-json /tmp/smtkit_probe.json \
+smtkit-ci probe --output-json /tmp/smtkit_probe.json \
   --emit-demo-smt2 --demo-kind unsat-core --demo-smt2-out /tmp/demo.smt2
 ```
 
@@ -72,7 +73,7 @@ If you want `smtkit-ci` to **run** the demo and capture a bounded result (includ
 use:
 
 ```bash
-cargo run -p smtkit-ci -- probe --capture-demo --demo-kind unsat-proof --demo-proof-max-chars 12000
+smtkit-ci probe --capture-demo --demo-kind unsat-proof --demo-proof-max-chars 12000
 ```
 
 ## Notes on solver “proofs”
