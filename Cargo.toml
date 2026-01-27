@@ -4,14 +4,30 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Facade crate for SMT constraint IR + SMT-LIB backends"
+repository = "https://github.com/arclabs561/smtkit"
+readme = "README.md"
 publish = true
+
+[workspace]
+resolver = "2"
+members = [
+  "crates/smtkit-core",
+  "crates/smtkit-smtlib",
+  "crates/smtkit-z3",
+  "crates/smtkit-ci",
+]
+
+[workspace.dependencies]
+anyhow = "1"
+clap = "4"
+serde_json = "1.0"
 
 [dependencies]
 anyhow = "1"
 thiserror = "2"
-smtkit-core = { path = "crates/smtkit-core" }
-smtkit-smtlib = { path = "crates/smtkit-smtlib" }
-smtkit-z3 = { path = "crates/smtkit-z3", optional = true }
+smtkit-core = { version = "0.1.0", path = "crates/smtkit-core" }
+smtkit-smtlib = { version = "0.1.0", path = "crates/smtkit-smtlib" }
+smtkit-z3 = { version = "0.1.0", path = "crates/smtkit-z3", optional = true }
 
 [features]
 # No solver integration by default: pure SMT-LIB2 script generation.

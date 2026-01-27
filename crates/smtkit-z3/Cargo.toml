@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Z3 in-process backend for smtkit (feature-gated)"
+repository = "https://github.com/arclabs561/smtkit"
 publish = true
 
 [dependencies]
 thiserror = "2"
-smtkit-core = { path = "../smtkit-core" }
+smtkit-core = { version = "0.1.0", path = "../smtkit-core" }
 z3 = { version = "0.19.7", default-features = false }
 
 [features]
