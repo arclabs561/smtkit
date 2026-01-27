@@ -5,6 +5,9 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Solver-agnostic typed IR for SMT constraints (core)"
 repository = "https://github.com/arclabs561/smtkit"
+homepage = "https://github.com/arclabs561/smtkit"
+documentation = "https://docs.rs/smtkit-core"
+readme = "../../README.md"
 publish = true
 
 [dependencies]

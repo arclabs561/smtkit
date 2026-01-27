@@ -5,6 +5,9 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "SMT-LIB2 serialization + solver I/O backend for smtkit"
 repository = "https://github.com/arclabs561/smtkit"
+homepage = "https://github.com/arclabs561/smtkit"
+documentation = "https://docs.rs/smtkit-smtlib"
+readme = "../../README.md"
 publish = true
 
 [dependencies]

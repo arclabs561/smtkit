@@ -5,6 +5,9 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Z3 in-process backend for smtkit (feature-gated)"
 repository = "https://github.com/arclabs561/smtkit"
+homepage = "https://github.com/arclabs561/smtkit"
+documentation = "https://docs.rs/smtkit-z3"
+readme = "../../README.md"
 publish = true
 
 [dependencies]

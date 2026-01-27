@@ -5,8 +5,11 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Facade crate for SMT constraint IR + SMT-LIB backends"
 repository = "https://github.com/arclabs561/smtkit"
+homepage = "https://github.com/arclabs561/smtkit"
+documentation = "https://docs.rs/smtkit"
 readme = "README.md"
 publish = true
+keywords = ["smt", "smtlib", "z3", "solver", "formal-methods"]
 
 [workspace]
 resolver = "2"
