@@ -88,4 +88,3 @@ This is **not** a proof checker: verification of solver proofs (e.g. Alethe proo
 - **Apps should pin**: if you build a tool like `proofpatch`, prefer `smtkit = "0.x.y"` (crates.io) and commit `Cargo.lock`.
 - **Libraries can float**: if you’re publishing a library, prefer semver ranges and do not commit `Cargo.lock`.
 - **Pre-release testing**: for unreleased changes, temporarily pin a git tag (e.g. `v0.1.1`) or a git rev, then switch back to crates.io on release.
-
