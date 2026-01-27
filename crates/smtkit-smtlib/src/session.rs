@@ -185,7 +185,12 @@ impl SmtlibSession {
             InBarSymbol,
         }
 
-        fn scan_line_update_depth(line: &str, depth: &mut i64, started: &mut bool, st: &mut ScanState) {
+        fn scan_line_update_depth(
+            line: &str,
+            depth: &mut i64,
+            started: &mut bool,
+            st: &mut ScanState,
+        ) {
             let bytes = line.as_bytes();
             let mut i: usize = 0;
             while i < bytes.len() {
@@ -558,8 +563,9 @@ pub fn probe_capabilities(sess: &mut SmtlibSession) -> Capabilities {
             if let Ok(core) = sess.get_unsat_core() {
                 caps.get_unsat_core = true;
                 if let Sexp::List(items) = core {
-                    caps.named_assertions_in_core =
-                        items.into_iter().any(|it| matches!(it, Sexp::Atom(a) if a == "h0"));
+                    caps.named_assertions_in_core = items
+                        .into_iter()
+                        .any(|it| matches!(it, Sexp::Atom(a) if a == "h0"));
                 }
             }
         }

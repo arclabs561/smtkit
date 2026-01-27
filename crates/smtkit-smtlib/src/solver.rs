@@ -205,9 +205,7 @@ pub fn parse_z3_output(stdout: &str, stderr: &str) -> Result<Z3Output, ParseSolv
     let model = if model_txt.trim().is_empty() || is_errorish_line(&model_txt) {
         None
     } else {
-        Some(
-            crate::sexp::parse_one(&model_txt).map_err(ParseSolverOutputError::Model)?,
-        )
+        Some(crate::sexp::parse_one(&model_txt).map_err(ParseSolverOutputError::Model)?)
     };
 
     Ok(Z3Output {
