@@ -11,61 +11,6 @@
 - **Run** an external solver over stdio (optional).
 - **Capture artifacts** (capability matrix, SMT2 scripts, models/cores/proofs) so solver-driven behavior is debuggable and comparable across solvers.
 
-## Why it exists
-
-SMT integrations tend to go wrong in the same ways:
-
-- Tooling silently depends on solver quirks (Z3 vs cvc5 behavior).
-- Results are hard to reproduce (no stable script, no determinism hooks recorded).
-- Debugging “why UNSAT?” is opaque (no unsat core, no minimal fragment, no provenance).
-
-`smtkit` is built around the opposite posture: **emit the script, run the solver, and keep the evidence**.
-
-## Crates
-
-- **`smtkit`**: facade crate you depend on (re-exports the rest).
-- **`smtkit-core`**: typed, backend-agnostic constraint IR.
-- **`smtkit-smtlib`**: SMT-LIB2 s-expressions, script building, and an incremental stdio session.
-- **`smtkit-z3`**: optional in-process Z3 backend (feature-gated).
-- **`smtkit-ci`**: small CLI for CI + debugging (`probe`, `smoke`).
-
-## Quickstart (Rust): build an SMT-LIB2 script
-
-This is a tiny by-example script builder (see `examples/graph_coloring.rs`):
-
-```rust
-use smtkit::smt2::{t, Script, Sort, Var};
-
-fn main() {
-    let mut s = Script::new();
-    s.set_logic("QF_LIA");
-    s.set_option(":produce-models".to_string(), t::bool_lit(true));
-
-    let c0 = Var::new("c0", Sort::Int);
-    let c1 = Var::new("c1", Sort::Int);
-    let c2 = Var::new("c2", Sort::Int);
-
-    for v in [&c0, &c1, &c2] {
-        s.declare_const(v);
-        // 0 <= ci < 3
-        s.assert(t::and(vec![
-            t::ge(v.sym(), t::int_lit(0)),
-            t::lt(v.sym(), t::int_lit(3)),
-        ]));
-    }
-
-    // Triangle graph => all colors different.
-    s.assert(t::distinct(vec![c0.sym(), c1.sym(), c2.sym()]));
-    s.check_sat();
-    s.get_model();
-
-    print!("{s}");
-}
-```
-
-If you want to run a solver session over stdio (and set determinism hooks like timeout/seed),
-see `examples/session_determinism_hooks.rs`.
-
 ## Quickstart: probe solver capabilities
 
 If you have a solver on PATH (e.g. `z3`), run:
@@ -112,6 +57,24 @@ use:
 ```bash
 smtkit-ci probe --capture-demo --demo-kind unsat-proof --demo-proof-max-chars 12000
 ```
+
+## Why it exists
+
+SMT integrations tend to go wrong in the same ways:
+
+- Tooling silently depends on solver quirks (Z3 vs cvc5 behavior).
+- Results are hard to reproduce (no stable script, no determinism hooks recorded).
+- Debugging “why UNSAT?” is opaque (no unsat core, no minimal fragment, no provenance).
+
+`smtkit` is built around the opposite posture: **emit the script, run the solver, and keep the evidence**.
+
+## Crates
+
+- **`smtkit`**: facade crate you depend on (re-exports the rest).
+- **`smtkit-core`**: typed, backend-agnostic constraint IR.
+- **`smtkit-smtlib`**: SMT-LIB2 s-expressions, script building, and an incremental stdio session.
+- **`smtkit-z3`**: optional in-process Z3 backend (feature-gated).
+- **`smtkit-ci`**: small CLI for CI + debugging (`probe`, `smoke`).
 
 ## Notes on solver “proofs”
 
