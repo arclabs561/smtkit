@@ -47,3 +47,6 @@ z3-inproc-gh-release = ["z3-inproc", "smtkit-z3/gh-release"]
 # (This uses `gh-release`, which requires network access during build.)
 z3-auto = ["z3-inproc-gh-release"]
 
+[dev-dependencies]
+structops = { version = "0.1", path = "../structops" }
+
