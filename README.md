@@ -4,12 +4,7 @@
 [![crates.io](https://img.shields.io/crates/v/smtkit.svg)](https://crates.io/crates/smtkit)
 [![docs.rs](https://docs.rs/smtkit/badge.svg)](https://docs.rs/smtkit)
 
-`smtkit` is a small Rust toolkit for **reproducible SMT workflows**:
-
-- **Build** constraints (typed IR in `smtkit-core`).
-- **Emit** SMT-LIB2 (`smtkit-smtlib`).
-- **Run** an external solver over stdio (optional).
-- **Capture artifacts** (capability matrix, SMT2 scripts, models/cores/proofs) so solver-driven behavior is debuggable and comparable across solvers.
+SMT solver toolkit.
 
 ## Quickstart: probe solver capabilities
 
