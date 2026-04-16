@@ -48,8 +48,8 @@ z3-inproc-gh-release = ["z3-inproc", "smtkit-z3/gh-release"]
 z3-auto = ["z3-inproc-gh-release"]
 
 [dev-dependencies]
-pare = { version = "0.2", path = "../pare" }
-structops = { version = "0.1", path = "../structops" }
+pare = "0.2"
+structops = "0.1"
 
 [[example]]
 name = "pareto_frontier"
