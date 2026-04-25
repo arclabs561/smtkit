@@ -37,26 +37,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Cost matrix: cost[worker][task]
-    let cost: [[i64; 4]; 4] = [
-        [9, 2, 7, 8],
-        [6, 4, 3, 7],
-        [5, 8, 1, 8],
-        [7, 6, 9, 4],
-    ];
+    let cost: [[i64; 4]; 4] = [[9, 2, 7, 8], [6, 4, 3, 7], [5, 8, 1, 8], [7, 6, 9, 4]];
     // Latency matrix: latency[worker][task]
-    let latency: [[i64; 4]; 4] = [
-        [3, 7, 2, 5],
-        [6, 1, 8, 3],
-        [4, 9, 1, 7],
-        [8, 2, 6, 2],
-    ];
+    let latency: [[i64; 4]; 4] = [[3, 7, 2, 5], [6, 1, 8, 3], [4, 9, 1, 7], [8, 2, 6, 2]];
     // Risk matrix: risk[worker][task]
-    let risk: [[i64; 4]; 4] = [
-        [1, 5, 3, 4],
-        [4, 2, 6, 1],
-        [3, 7, 1, 5],
-        [6, 3, 4, 2],
-    ];
+    let risk: [[i64; 4]; 4] = [[1, 5, 3, 4], [4, 2, 6, 1], [3, 7, 1, 5], [6, 3, 4, 2]];
 
     let mut ctx = Ctx::new();
 
@@ -141,11 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Direction::Minimize,
         Direction::Minimize,
     ])
-    .with_labels(vec![
-        "cost".into(),
-        "latency".into(),
-        "risk".into(),
-    ]);
+    .with_labels(vec!["cost".into(), "latency".into(), "risk".into()]);
 
     let mut enumerated = 0usize;
     loop {
@@ -167,15 +148,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let ri = get_int("obj_risk");
                 let assign: Vec<i64> = (0..4).map(|i| get_int(&format!("x{i}"))).collect();
 
-                let added = frontier.push(
-                    vec![c as f64, l as f64, ri as f64],
-                    assign.clone(),
-                );
+                let added = frontier.push(vec![c as f64, l as f64, ri as f64], assign.clone());
 
                 if added {
-                    println!(
-                        "  non-dominated: x={assign:?}  cost={c} latency={l} risk={ri}"
-                    );
+                    println!("  non-dominated: x={assign:?}  cost={c} latency={l} risk={ri}");
                 }
 
                 // Block this assignment from appearing again.
@@ -189,9 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let lit = match *mv {
                         smtkit::z3::ModelValue::Int(n) => ctx.int_lit(n),
                         smtkit::z3::ModelValue::Bool(b) => ctx.bool_lit(b),
-                        smtkit::z3::ModelValue::BitVec { value, width } => {
-                            ctx.bv_lit(value, width)
-                        }
+                        smtkit::z3::ModelValue::BitVec { value, width } => ctx.bv_lit(value, width),
                     };
                     assigns.push((v, lit));
                 }
@@ -207,19 +181,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("\nenumerated {enumerated} feasible assignments");
-    println!(
-        "pareto frontier: {} non-dominated points\n",
-        frontier.len()
-    );
+    println!("pareto frontier: {} non-dominated points\n", frontier.len());
 
     let labels = frontier.labels();
     for (i, pt) in frontier.points().iter().enumerate() {
         println!(
             "  [{i}] {}={:.0}  {}={:.0}  {}={:.0}  assignment={:?}",
-            labels[0], pt.values[0],
-            labels[1], pt.values[1],
-            labels[2], pt.values[2],
-            pt.data,
+            labels[0], pt.values[0], labels[1], pt.values[1], labels[2], pt.values[2], pt.data,
         );
     }
 
