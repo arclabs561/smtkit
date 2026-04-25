@@ -92,7 +92,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     println!("Ontology consistency check");
-    println!("  {} axiom instances, {} variables", assertions.len(), all_vars.len());
+    println!(
+        "  {} axiom instances, {} variables",
+        assertions.len(),
+        all_vars.len()
+    );
     println!();
     println!("Axioms:");
     println!("  1. Mammal ⊑ Animal");
