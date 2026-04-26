@@ -140,7 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         println!("(z3-inproc feature not enabled -- emitting SMT-LIB2 script instead)");
         println!();
-        let mut script = smtkit::smtlib::Script::new();
+        let mut script = smtkit::smt2::Script::new();
         script.set_logic("QF_LIA");
         for &v in &all_vars {
             if let smtkit::core::TermKind::Var { ref sym, ref sort } = ctx.kind_of(v) {
