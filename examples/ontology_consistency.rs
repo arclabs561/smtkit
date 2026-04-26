@@ -143,15 +143,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut script = smtkit::smt2::Script::new();
         script.set_logic("QF_LIA");
         for &v in &all_vars {
-            if let smtkit::core::TermKind::Var { ref sym, ref sort } = ctx.kind_of(v) {
-                script.declare_const(&sym.0, sort);
+            if let smtkit::core::TermKind::Var { ref sym, .. } = ctx.kind_of(v) {
+                // QF_LIA: every declared const is Int.
+                let var = smtkit::smt2::Var::new(sym.0.clone(), smtkit::smt2::Sort::Int);
+                script.declare_const(&var);
             }
         }
         for &a in &assertions {
             script.assert_term(&ctx, a);
         }
         script.check_sat();
-        println!("{}", script.to_smt2());
+        println!("{}", script);
     }
 
     Ok(())
