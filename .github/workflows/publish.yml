@@ -41,6 +41,10 @@ jobs:
 
       - name: cargo-semver-checks
         uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          # z3-inproc needs a system Z3; all-features cannot build on a
+          # plain runner. Default features are the supported gate.
+          feature-group: default-features
 
       - name: Authenticate (Trusted Publishing)
         id: auth
