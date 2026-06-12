@@ -49,7 +49,7 @@ z3-auto = ["z3-inproc-gh-release"]
 
 [dev-dependencies]
 pare = "0.2"
-structops = "0.1"
+structops = "0.2"
 
 [[example]]
 name = "pareto_frontier"
