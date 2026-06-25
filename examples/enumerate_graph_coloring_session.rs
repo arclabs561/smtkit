@@ -1,3 +1,11 @@
+//! Enumerate every valid coloring of a triangle by adding a blocking clause for
+//! each solution found and re-solving, the standard pattern for counting or
+//! sampling all models rather than just one. Drives an incremental SMT-LIB
+//! session when a `z3` binary is on PATH (`z3-bin`), and emits the script
+//! otherwise.
+//!
+//! Run: `cargo run --example enumerate_graph_coloring_session`
+
 #[cfg(feature = "z3-bin")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use smtkit::smt2::{t, Sort, Var};

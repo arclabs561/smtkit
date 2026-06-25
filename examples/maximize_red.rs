@@ -1,3 +1,9 @@
+//! Optimization modulo theories: maximize an objective subject to constraints
+//! (the "maximize red countries" puzzle). Shows how to express a max-objective
+//! over an SMT model. Emits an SMT-LIB2 script; no solver required to run.
+//!
+//! Run: `cargo run --example maximize_red`
+
 use smtkit::smt2::{t, Script, Sort, Var};
 
 fn main() {

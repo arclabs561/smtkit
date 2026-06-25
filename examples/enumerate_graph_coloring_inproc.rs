@@ -1,3 +1,9 @@
+//! The enumerate-all-colorings pattern (blocking clauses, re-solve) driven
+//! through the in-process Z3 backend instead of a child process, the path you
+//! take when solver round-trips dominate and you want to stay in memory.
+//!
+//! Run: `cargo run --example enumerate_graph_coloring_inproc --features z3-inproc`
+
 #[cfg(feature = "z3-inproc")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     use smtkit::core::{Ctx, Op, Sort, TermId, TypeError};

@@ -1,3 +1,9 @@
+//! Graph coloring as SMT: assign one of K colors to each vertex so that adjacent
+//! vertices differ. The textbook constraint problem behind register allocation
+//! and exam scheduling. Emits an SMT-LIB2 script; no solver required to run.
+//!
+//! Run: `cargo run --example graph_coloring`
+
 use smtkit::smt2::{t, Script, Sort, Var};
 
 fn main() {

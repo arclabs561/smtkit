@@ -80,16 +80,18 @@ This is **not** a proof checker: verification of solver proofs (e.g. Alethe proo
 
 ## Examples
 
-Runnable examples live in [`examples/`](examples/):
+Runnable examples live in [`examples/`](examples/). The default ones emit
+SMT-LIB2 scripts and need no solver installed (smtkit's core posture); the ones
+marked **(needs `z3-inproc`)** drive a system Z3 in process.
 
-- `constrained_soft_path` solves a constrained soft shortest path (smtkit-core constraints + structops soft optimization).
-- `graph_coloring` encodes a small by-example graph-coloring instance.
-- `enumerate_graph_coloring_session` enumerates every coloring of a triangle via an incremental SMT-LIB session.
-- `enumerate_graph_coloring_inproc` does the same through the in-process Z3 backend (needs the `z3` feature).
-- `ontology_consistency` checks EL++ ontology consistency encoded as SMT.
-- `maximize_red` is a max-objective optimization ("maximize red countries").
-- `pareto_frontier` does multi-objective optimization via SMT enumeration plus a Pareto frontier.
-- `session_determinism_hooks` is a session smoke test exercising the determinism hooks.
+- `graph_coloring` encodes a small graph-coloring instance, the textbook constraint problem behind register allocation and exam scheduling.
+- `enumerate_graph_coloring_session` enumerates every valid coloring of a triangle via an incremental SMT-LIB session, the blocking-clause pattern for counting or sampling all solutions rather than just one.
+- `ontology_consistency` checks EL++ ontology consistency as SMT, the satisfiability core of description-logic knowledge-base validation.
+- `maximize_red` is a small optimization-modulo-theories instance: maximize an objective subject to constraints.
+- `session_determinism_hooks` is a smoke test for the determinism hooks that make solver runs reproducible across machines.
+- `enumerate_graph_coloring_inproc` is the enumeration above run through the in-process backend **(needs `z3-inproc`)**.
+- `pareto_frontier` enumerates the Pareto frontier of a multi-objective problem, the shape of trade-off analysis in resource allocation **(needs `z3-inproc`)**.
+- `constrained_soft_path` solves a shortest path with hard SMT constraints plus soft preferences, the mix routing and planning problems usually need **(needs `z3-inproc`)**.
 
 ## Versioning + pinning policy (recommended)
 
