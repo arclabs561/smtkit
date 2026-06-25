@@ -78,6 +78,19 @@ and the capability probe (`get_proof`) so you can **capture** proof objects for 
 
 This is **not** a proof checker: verification of solver proofs (e.g. Alethe proof checking) is a separate layer.
 
+## Examples
+
+Runnable examples live in [`examples/`](examples/):
+
+- `constrained_soft_path` solves a constrained soft shortest path (smtkit-core constraints + structops soft optimization).
+- `graph_coloring` encodes a small by-example graph-coloring instance.
+- `enumerate_graph_coloring_session` enumerates every coloring of a triangle via an incremental SMT-LIB session.
+- `enumerate_graph_coloring_inproc` does the same through the in-process Z3 backend (needs the `z3` feature).
+- `ontology_consistency` checks EL++ ontology consistency encoded as SMT.
+- `maximize_red` is a max-objective optimization ("maximize red countries").
+- `pareto_frontier` does multi-objective optimization via SMT enumeration plus a Pareto frontier.
+- `session_determinism_hooks` is a session smoke test exercising the determinism hooks.
+
 ## Versioning + pinning policy (recommended)
 
 - **Apps should pin**: if you build a tool like `proofpatch`, prefer `smtkit = "0.x.y"` (crates.io) and commit `Cargo.lock`.
