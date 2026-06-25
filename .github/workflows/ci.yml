@@ -24,3 +24,14 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
+      # Default features generate SMT-LIB2 scripts with no solver, so these
+      # examples run without z3. The z3-inproc examples (constrained_soft_path,
+      # *_inproc, pareto_frontier) need a system Z3 and are excluded.
+      - name: run example assertions
+        run: |
+          cargo run --example graph_coloring
+          cargo run --example maximize_red
+          cargo run --example ontology_consistency
+          cargo run --example session_determinism_hooks
+          cargo run --example enumerate_graph_coloring_session
+
