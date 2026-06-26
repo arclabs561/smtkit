@@ -1,8 +1,9 @@
 //! Smoke test for the determinism hooks that make solver runs reproducible:
 //! fixed seeds and stable option ordering so the same script yields the same
 //! model across machines, which is what lets SMT results be cached and diffed.
+//! Needs the `z3-bin` feature (shells out to a system `z3`).
 //!
-//! Run: `cargo run --example session_determinism_hooks`
+//! Run: `cargo run --example session_determinism_hooks --features z3-bin`
 
 #[cfg(feature = "z3-bin")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {

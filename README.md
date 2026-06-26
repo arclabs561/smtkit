@@ -80,18 +80,18 @@ This is **not** a proof checker: verification of solver proofs (e.g. Alethe proo
 
 ## Examples
 
-Runnable examples live in [`examples/`](examples/). The default ones emit
-SMT-LIB2 scripts and need no solver installed (smtkit's core posture); the ones
-marked **(needs `z3-inproc`)** drive a system Z3 in process.
+Runnable examples live in [`examples/`](examples/). Unmarked examples emit
+SMT-LIB2 scripts and need no solver installed (smtkit's core posture); `z3-bin`
+examples shell out to a system `z3`; `z3-inproc` examples drive Z3 in process.
 
 - `graph_coloring` encodes a small graph-coloring instance, the textbook constraint problem behind register allocation and exam scheduling.
-- `enumerate_graph_coloring_session` enumerates every valid coloring of a triangle via an incremental SMT-LIB session, the blocking-clause pattern for counting or sampling all solutions rather than just one.
-- `ontology_consistency` checks EL++ ontology consistency as SMT, the satisfiability core of description-logic knowledge-base validation.
 - `maximize_red` is a small optimization-modulo-theories instance: maximize an objective subject to constraints.
-- `session_determinism_hooks` is a smoke test for the determinism hooks that make solver runs reproducible across machines.
-- `enumerate_graph_coloring_inproc` is the enumeration above run through the in-process backend **(needs `z3-inproc`)**.
-- `pareto_frontier` enumerates the Pareto frontier of a multi-objective problem, the shape of trade-off analysis in resource allocation **(needs `z3-inproc`)**.
-- `constrained_soft_path` solves a shortest path with hard SMT constraints plus soft preferences, the mix routing and planning problems usually need **(needs `z3-inproc`)**.
+- `ontology_consistency` checks EL++ ontology consistency as SMT, the satisfiability core of description-logic knowledge-base validation.
+- `enumerate_graph_coloring_session` enumerates every valid coloring of a triangle via an incremental SMT-LIB session, the blocking-clause pattern for counting or sampling all solutions rather than just one. (needs `z3-bin`)
+- `session_determinism_hooks` is a smoke test for the determinism hooks that make solver runs reproducible across machines. (needs `z3-bin`)
+- `enumerate_graph_coloring_inproc` is the enumeration above run through the in-process backend. (needs `z3-inproc`)
+- `pareto_frontier` enumerates the Pareto frontier of a multi-objective problem, the shape of trade-off analysis in resource allocation. (needs `z3-inproc`)
+- `constrained_soft_path` solves a shortest path with hard SMT constraints plus soft preferences, the mix routing and planning problems usually need. (needs `z3-inproc`)
 
 ## Versioning + pinning policy (recommended)
 
