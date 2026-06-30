@@ -80,6 +80,10 @@ This is **not** a proof checker: verification of solver proofs (e.g. Alethe proo
 
 ## Examples
 
+See [`examples/README.md`](examples/README.md) for the full gallery: each
+example states the question it answers, the run command, feature requirements,
+and real sample output.
+
 Runnable examples live in [`examples/`](examples/). Unmarked examples emit
 SMT-LIB2 scripts and need no solver installed (smtkit's core posture); `z3-bin`
 examples shell out to a system `z3`; `z3-inproc` examples drive Z3 in process.
