@@ -52,7 +52,7 @@ use:
 smtkit-ci probe --capture-demo --demo-kind unsat-proof --demo-proof-max-chars 12000
 ```
 
-## Why it exists
+## Replayable Solver Runs
 
 SMT integrations need stable scripts, recorded solver options, and reproducible
 solver runs. `smtkit` emits SMT-LIB scripts and records probe output so failures
