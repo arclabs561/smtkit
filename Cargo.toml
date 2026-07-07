@@ -3,7 +3,7 @@ name = "smtkit"
 version = "0.1.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-description = "Facade crate for SMT constraint IR + SMT-LIB backends"
+description = "SMT solver toolkit"
 repository = "https://github.com/arclabs561/smtkit"
 homepage = "https://github.com/arclabs561/smtkit"
 documentation = "https://docs.rs/smtkit"
@@ -54,4 +54,3 @@ structops = "0.2"
 [[example]]
 name = "pareto_frontier"
 required-features = ["z3-inproc"]
-

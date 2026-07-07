@@ -1,6 +1,5 @@
 # smtkit
 
-[![CI](https://github.com/arclabs561/smtkit/actions/workflows/ci.yml/badge.svg)](https://github.com/arclabs561/smtkit/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/smtkit.svg)](https://crates.io/crates/smtkit)
 [![docs.rs](https://docs.rs/smtkit/badge.svg)](https://docs.rs/smtkit)
 
@@ -55,13 +54,9 @@ smtkit-ci probe --capture-demo --demo-kind unsat-proof --demo-proof-max-chars 12
 
 ## Why it exists
 
-SMT integrations tend to go wrong in the same ways:
-
-- Tooling silently depends on solver quirks (Z3 vs cvc5 behavior).
-- Results are hard to reproduce (no stable script, no determinism hooks recorded).
-- Debugging “why UNSAT?” is opaque (no unsat core, no minimal fragment, no provenance).
-
-`smtkit` is built around the opposite posture: **emit the script, run the solver, and keep the evidence**.
+SMT integrations need stable scripts, recorded solver options, and reproducible
+solver runs. `smtkit` emits SMT-LIB scripts and records probe output so failures
+can be replayed.
 
 ## Crates
 
