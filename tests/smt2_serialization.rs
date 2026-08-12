@@ -28,6 +28,32 @@ fn script_serializes_full_smt2() {
     assert_eq!(s.to_string(), expected);
 }
 
+/// Invariant: generating the same script twice is byte-deterministic, and every
+/// emitted command is accepted unchanged by the public SMT-LIB parser.
+#[test]
+fn generated_script_is_deterministic_and_parseable() {
+    fn generate() -> String {
+        let mut script = Script::new();
+        script.set_logic("QF_LIA");
+        let x = Var::new("x", Sort::Int);
+        script.declare_const(&x);
+        script.assert(t::eq(x.sym(), t::int_lit(0)));
+        script.check_sat();
+        script.to_string()
+    }
+
+    let first = generate();
+    let second = generate();
+    assert_eq!(first, second);
+
+    let commands: Vec<_> = first.lines().collect();
+    assert_eq!(commands.len(), 4);
+    for command in commands {
+        let parsed = parse_one(command).expect("generated command should parse");
+        assert_eq!(parsed.to_string(), command);
+    }
+}
+
 /// Invariant: `parse_one` parses canonical SMT-LIB2 model output
 /// `((x 5) (y 3))` into the expected nested `Sexp` AST, and `Display`
 /// re-serializes it byte-for-byte (whitespace normalized to single spaces).
