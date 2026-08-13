@@ -8,8 +8,11 @@
 //! Higher-level backends can add richer parsing and capabilities as needed.
 
 use std::io::ErrorKind;
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use crate::sexp::Sexp;
 
@@ -56,6 +59,17 @@ pub enum SessionError {
     Stdout(#[source] std::io::Error),
     #[error("unexpected EOF while reading solver output")]
     Eof,
+    #[error("solver does not support the requested SMT-LIB command")]
+    Unsupported,
+    #[error("solver rejected an SMT-LIB command: {message}")]
+    Solver { message: String },
+    #[error("solver did not respond to {operation} within {timeout:?}")]
+    Timeout {
+        operation: &'static str,
+        timeout: Duration,
+    },
+    #[error("solver session is unusable after an earlier protocol or timeout error")]
+    Poisoned,
     #[error("unknown solver status line: {0}")]
     UnknownStatus(String),
     #[error("failed to parse s-expression response")]
@@ -72,8 +86,17 @@ pub enum SessionError {
 pub struct SmtlibSession {
     child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    stdout: mpsc::Receiver<Result<String, std::io::Error>>,
+    stdout_thread: Option<JoinHandle<()>>,
+    stderr_thread: Option<JoinHandle<()>>,
+    stderr_tail: Arc<Mutex<Vec<u8>>>,
+    wall_timeout: Duration,
+    poisoned: bool,
+    next_sync_id: u64,
 }
+
+const DEFAULT_WALL_TIMEOUT: Duration = Duration::from_secs(30);
+const STDERR_TAIL_LIMIT: usize = 16 * 1024;
 
 impl SmtlibSession {
     /// Spawn a solver process.
@@ -97,11 +120,71 @@ impl SmtlibSession {
         })?;
         let stdin = child.stdin.take().ok_or(SessionError::MissingStdin)?;
         let stdout = child.stdout.take().ok_or(SessionError::MissingStdout)?;
+        let stderr = child.stderr.take();
+        let (stdout_tx, stdout_rx) = mpsc::sync_channel(64);
+        let stdout_thread = std::thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            loop {
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        if stdout_tx.send(Ok(line)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = stdout_tx.send(Err(error));
+                        break;
+                    }
+                }
+            }
+        });
+        let stderr_tail = Arc::new(Mutex::new(Vec::new()));
+        let stderr_thread = stderr.map(|mut stderr| {
+            let tail = Arc::clone(&stderr_tail);
+            std::thread::spawn(move || {
+                let mut chunk = [0_u8; 4096];
+                while let Ok(n) = stderr.read(&mut chunk) {
+                    if n == 0 {
+                        break;
+                    }
+                    if let Ok(mut captured) = tail.lock() {
+                        captured.extend_from_slice(&chunk[..n]);
+                        if captured.len() > STDERR_TAIL_LIMIT {
+                            let excess = captured.len() - STDERR_TAIL_LIMIT;
+                            captured.drain(..excess);
+                        }
+                    }
+                }
+            })
+        });
         Ok(Self {
             child,
             stdin,
-            stdout: BufReader::new(stdout),
+            stdout: stdout_rx,
+            stdout_thread: Some(stdout_thread),
+            stderr_thread,
+            stderr_tail,
+            wall_timeout: DEFAULT_WALL_TIMEOUT,
+            poisoned: false,
+            next_sync_id: 0,
         })
+    }
+
+    /// Set the maximum wall-clock time spent waiting for any single solver response.
+    ///
+    /// A timeout terminates and reaps the child process; the session cannot be reused.
+    pub fn set_wall_timeout(&mut self, timeout: Duration) {
+        self.wall_timeout = timeout;
+    }
+
+    /// Return the bounded tail of solver diagnostics captured from stderr.
+    pub fn stderr_tail(&self) -> String {
+        self.stderr_tail
+            .lock()
+            .map(|tail| String::from_utf8_lossy(&tail).into_owned())
+            .unwrap_or_default()
     }
 
     /// Spawn a solver from a shell-like command line.
@@ -126,6 +209,9 @@ impl SmtlibSession {
 
     /// Send raw SMT-LIB text (must include trailing newline if needed).
     pub fn send_raw(&mut self, s: &str) -> Result<(), SessionError> {
+        if self.poisoned {
+            return Err(SessionError::Poisoned);
+        }
         self.stdin
             .write_all(s.as_bytes())
             .map_err(SessionError::Stdin)?;
@@ -134,17 +220,90 @@ impl SmtlibSession {
     }
 
     /// Read the next non-empty line from stdout (trimmed).
-    fn read_nonempty_line(&mut self) -> Result<String, SessionError> {
-        let mut line = String::new();
-        loop {
-            line.clear();
-            let n = self
-                .stdout
-                .read_line(&mut line)
-                .map_err(SessionError::Stdout)?;
-            if n == 0 {
-                return Err(SessionError::Eof);
+    fn read_line_until(
+        &mut self,
+        operation: &'static str,
+        started: Instant,
+    ) -> Result<String, SessionError> {
+        let elapsed = started.elapsed();
+        if elapsed >= self.wall_timeout {
+            self.poisoned = true;
+            self.terminate_and_reap();
+            return Err(SessionError::Timeout {
+                operation,
+                timeout: self.wall_timeout,
+            });
+        }
+        let remaining = self.wall_timeout - elapsed;
+        match self.stdout.recv_timeout(remaining) {
+            Ok(Ok(line)) => Ok(line),
+            Ok(Err(error)) => Err(SessionError::Stdout(error)),
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(SessionError::Eof),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                self.poisoned = true;
+                self.terminate_and_reap();
+                Err(SessionError::Timeout {
+                    operation,
+                    timeout: self.wall_timeout,
+                })
             }
+        }
+    }
+
+    fn response_error(line: &str) -> Option<SessionError> {
+        let trimmed = line.trim();
+        if trimmed == "unsupported" || trimmed.starts_with("(unsupported") {
+            Some(SessionError::Unsupported)
+        } else if trimmed.starts_with("(error") {
+            Some(SessionError::Solver {
+                message: trimmed.to_string(),
+            })
+        } else {
+            None
+        }
+    }
+
+    fn fail_protocol<T>(&mut self, error: SessionError) -> Result<T, SessionError> {
+        self.poisoned = true;
+        self.terminate_and_reap();
+        Err(error)
+    }
+
+    /// Send a command that normally has no specific response, then use SMT-LIB
+    /// `echo` as an ordering fence. This attributes `unsupported`/`(error ...)`
+    /// to the command that caused it instead of leaving the response to poison a
+    /// later `check-sat` or `get-*` call.
+    fn send_checked(&mut self, command: &str, operation: &'static str) -> Result<(), SessionError> {
+        let token = format!("smtkit-sync-{}", self.next_sync_id);
+        self.next_sync_id = self.next_sync_id.wrapping_add(1);
+        self.send_raw(&format!("{command}(echo \"{token}\")\n"))?;
+
+        let started = Instant::now();
+        let expected = format!("\"{token}\"");
+        let mut command_error = None;
+        loop {
+            let line = self.read_line_until(operation, started)?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed == "success" {
+                continue;
+            }
+            if trimmed == expected || trimmed == token {
+                return command_error.map_or(Ok(()), Err);
+            }
+            if let Some(error) = Self::response_error(trimmed) {
+                command_error.get_or_insert(error);
+                continue;
+            }
+            return self.fail_protocol(SessionError::Solver {
+                message: format!("unexpected response while synchronizing {operation}: {trimmed}"),
+            });
+        }
+    }
+
+    fn read_nonempty_line(&mut self, operation: &'static str) -> Result<String, SessionError> {
+        let started = Instant::now();
+        loop {
+            let line = self.read_line_until(operation, started)?;
             let t = line.trim();
             if t.is_empty() {
                 continue;
@@ -154,17 +313,8 @@ impl SmtlibSession {
             if t == "success" {
                 continue;
             }
-            // Some solvers may emit `(error "...")` or `(warning "...")` on stdout for commands
-            // that we treat as "no response expected" (e.g. unsupported options). Since `check-sat`
-            // returns only `sat|unsat|unknown`, skip these and keep reading for the status line.
-            //
-            // Callers that care about errors should use a higher-level session that tracks them.
-            if t == "unsupported"
-                || t.starts_with("(error")
-                || t.starts_with("(warning")
-                || t.starts_with("(unsupported")
-            {
-                continue;
+            if let Some(error) = Self::response_error(t) {
+                return Err(error);
             }
             if !t.is_empty() {
                 return Ok(t.to_string());
@@ -173,7 +323,8 @@ impl SmtlibSession {
     }
 
     /// Read a single s-expression response from stdout by balancing parentheses.
-    fn read_sexp_balanced(&mut self) -> Result<String, SessionError> {
+    fn read_sexp_balanced(&mut self, operation: &'static str) -> Result<String, SessionError> {
+        let started_at = Instant::now();
         let mut buf = String::new();
         let mut depth: i64 = 0;
         let mut started = false;
@@ -259,19 +410,15 @@ impl SmtlibSession {
 
         let mut state = ScanState::Normal;
         loop {
-            let mut line = String::new();
-            let n = self
-                .stdout
-                .read_line(&mut line)
-                .map_err(SessionError::Stdout)?;
-            if n == 0 {
-                return Err(SessionError::Eof);
-            }
+            let line = self.read_line_until(operation, started_at)?;
 
             if !started {
                 let t = line.trim();
                 if t.is_empty() || t == "success" {
                     continue;
+                }
+                if let Some(error) = Self::response_error(t) {
+                    return Err(error);
                 }
                 // Some solvers respond to `(get-...)` with a single atom like `unsupported`.
                 // Accept that as a complete response (so callers can parse it as an atom).
@@ -291,22 +438,22 @@ impl SmtlibSession {
 
     /// `(push 1)` (no response expected).
     pub fn push(&mut self) -> Result<(), SessionError> {
-        self.send_raw("(push 1)\n")
+        self.send_checked("(push 1)\n", "push")
     }
 
     /// `(pop n)` (no response expected).
     pub fn pop(&mut self, n: u32) -> Result<(), SessionError> {
-        self.send_raw(&format!("(pop {n})\n"))
+        self.send_checked(&format!("(pop {n})\n"), "pop")
     }
 
     /// `(set-logic LOGIC)` (no response expected).
     pub fn set_logic(&mut self, logic: &str) -> Result<(), SessionError> {
-        self.send_raw(&format!("(set-logic {logic})\n"))
+        self.send_checked(&format!("(set-logic {logic})\n"), "set-logic")
     }
 
     /// `(set-option KEY VALUE)` (no response expected).
     pub fn set_option(&mut self, key: &str, value: &Sexp) -> Result<(), SessionError> {
-        self.send_raw(&format!("(set-option {key} {value})\n"))
+        self.send_checked(&format!("(set-option {key} {value})\n"), "set-option")
     }
 
     /// Best-effort: enable/disable model production.
@@ -372,12 +519,12 @@ impl SmtlibSession {
 
     /// `(declare-const NAME SORT)` (no response expected).
     pub fn declare_const(&mut self, name: &str, sort: &Sexp) -> Result<(), SessionError> {
-        self.send_raw(&format!("(declare-const {name} {sort})\n"))
+        self.send_checked(&format!("(declare-const {name} {sort})\n"), "declare-const")
     }
 
     /// `(assert TERM)` (no response expected).
     pub fn assert_sexp(&mut self, term: &Sexp) -> Result<(), SessionError> {
-        self.send_raw(&format!("(assert {term})\n"))
+        self.send_checked(&format!("(assert {term})\n"), "assert")
     }
 
     /// Assert a typed IR term from `smtkit-core` by serializing it to SMT-LIB.
@@ -393,7 +540,7 @@ impl SmtlibSession {
     /// `(check-sat)` → status.
     pub fn check_sat(&mut self) -> Result<Status, SessionError> {
         self.send_raw("(check-sat)\n")?;
-        let line = self.read_nonempty_line()?;
+        let line = self.read_nonempty_line("check-sat")?;
         match line.as_str() {
             "sat" => Ok(Status::Sat),
             "unsat" => Ok(Status::Unsat),
@@ -416,7 +563,7 @@ impl SmtlibSession {
         }
         cmd.push_str("))\n");
         self.send_raw(&cmd)?;
-        let line = self.read_nonempty_line()?;
+        let line = self.read_nonempty_line("check-sat-assuming")?;
         match line.as_str() {
             "sat" => Ok(Status::Sat),
             "unsat" => Ok(Status::Unsat),
@@ -430,7 +577,7 @@ impl SmtlibSession {
     /// This is meaningful only after an `unsat` result and when unsat-core production is enabled.
     pub fn get_unsat_core(&mut self) -> Result<Sexp, SessionError> {
         self.send_raw("(get-unsat-core)\n")?;
-        let s = self.read_sexp_balanced()?;
+        let s = self.read_sexp_balanced("get-unsat-core")?;
         crate::sexp::parse_one(&s).map_err(SessionError::Parse)
     }
 
@@ -442,21 +589,21 @@ impl SmtlibSession {
     /// Note: solver support is not guaranteed; callers should treat errors as "info unavailable".
     pub fn get_info(&mut self, key: &str) -> Result<Sexp, SessionError> {
         self.send_raw(&format!("(get-info {key})\n"))?;
-        let s = self.read_sexp_balanced()?;
+        let s = self.read_sexp_balanced("get-info")?;
         crate::sexp::parse_one(&s).map_err(SessionError::Parse)
     }
 
     /// `(get-model)` → parsed model s-expression.
     pub fn get_model(&mut self) -> Result<Sexp, SessionError> {
         self.send_raw("(get-model)\n")?;
-        let s = self.read_sexp_balanced()?;
+        let s = self.read_sexp_balanced("get-model")?;
         crate::sexp::parse_one(&s).map_err(SessionError::Parse)
     }
 
     /// `(get-proof)` → parsed proof s-expression (solver-dependent).
     pub fn get_proof(&mut self) -> Result<Sexp, SessionError> {
         self.send_raw("(get-proof)\n")?;
-        let s = self.read_sexp_balanced()?;
+        let s = self.read_sexp_balanced("get-proof")?;
         crate::sexp::parse_one(&s).map_err(SessionError::Parse)
     }
 
@@ -474,7 +621,7 @@ impl SmtlibSession {
         }
         cmd.push_str("))\n");
         self.send_raw(&cmd)?;
-        let s = self.read_sexp_balanced()?;
+        let s = self.read_sexp_balanced("get-value")?;
         crate::sexp::parse_one(&s).map_err(SessionError::Parse)
     }
 
@@ -491,18 +638,65 @@ impl SmtlibSession {
     /// This is best-effort; some solvers may exit immediately, others may flush output first.
     pub fn exit(mut self) -> Result<std::process::ExitStatus, SessionError> {
         let _ = self.send_raw("(exit)\n");
-        self.child.wait().map_err(SessionError::Wait)
+        let status = self.wait_for_exit("exit")?;
+        self.join_readers();
+        Ok(status)
     }
 
     /// Best-effort terminate the child process.
     pub fn kill(&mut self) {
-        let _ = self.child.kill();
+        self.terminate_and_reap();
+    }
+
+    fn terminate_and_reap(&mut self) {
+        if self.child.try_wait().ok().flatten().is_none() {
+            let _ = self.child.kill();
+        }
+        let _ = self.child.wait();
+        self.join_readers();
+    }
+
+    fn wait_for_exit(
+        &mut self,
+        operation: &'static str,
+    ) -> Result<std::process::ExitStatus, SessionError> {
+        let started = Instant::now();
+        loop {
+            if let Some(status) = self.child.try_wait().map_err(SessionError::Wait)? {
+                return Ok(status);
+            }
+            if started.elapsed() >= self.wall_timeout {
+                self.poisoned = true;
+                self.terminate_and_reap();
+                return Err(SessionError::Timeout {
+                    operation,
+                    timeout: self.wall_timeout,
+                });
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn join_readers(&mut self) {
+        if let Some(thread) = self.stdout_thread.take() {
+            while !thread.is_finished() {
+                match self.stdout.try_recv() {
+                    Ok(_) => {}
+                    Err(mpsc::TryRecvError::Empty) => std::thread::yield_now(),
+                    Err(mpsc::TryRecvError::Disconnected) => break,
+                }
+            }
+            let _ = thread.join();
+        }
+        if let Some(thread) = self.stderr_thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 
 impl Drop for SmtlibSession {
     fn drop(&mut self) {
-        self.kill();
+        self.terminate_and_reap();
     }
 }
 
@@ -535,22 +729,26 @@ pub fn probe_capabilities(sess: &mut SmtlibSession) -> Capabilities {
         }
     }
 
+    // Capability-enabling options must precede the first check: cvc5 rejects
+    // several of them after the solver has entered its initialized state.
+    let _ = sess.set_print_success(false);
+    let models_enabled = sess.set_produce_models(true).is_ok();
+    let cores_enabled = sess.set_produce_unsat_cores(true).is_ok();
+    let proofs_enabled = sess.set_produce_proofs(true).is_ok();
+
     // check-sat-assuming
     caps.check_sat_assuming = sess.check_sat_assuming(&[]).is_ok();
 
     // get-model
-    let _ = sess.set_print_success(false);
-    let _ = sess.set_produce_models(true);
     if sess.push().is_ok() {
         let _ = sess.assert_sexp(&Sexp::atom("true"));
-        if matches!(sess.check_sat(), Ok(Status::Sat)) {
+        if models_enabled && matches!(sess.check_sat(), Ok(Status::Sat)) {
             caps.get_model = sess.get_model().is_ok();
         }
         let _ = sess.pop(1);
     }
 
     // get-unsat-core (and whether :named shows up)
-    let _ = sess.set_produce_unsat_cores(true);
     if sess.push().is_ok() {
         let named_false = Sexp::list(vec![
             Sexp::atom("!"),
@@ -559,7 +757,7 @@ pub fn probe_capabilities(sess: &mut SmtlibSession) -> Capabilities {
             Sexp::atom("h0"),
         ]);
         let _ = sess.assert_sexp(&named_false);
-        if matches!(sess.check_sat(), Ok(Status::Unsat)) {
+        if cores_enabled && matches!(sess.check_sat(), Ok(Status::Unsat)) {
             if let Ok(core) = sess.get_unsat_core() {
                 caps.get_unsat_core = true;
                 if let Sexp::List(items) = core {
@@ -573,10 +771,9 @@ pub fn probe_capabilities(sess: &mut SmtlibSession) -> Capabilities {
     }
 
     // get-proof (solver-dependent)
-    let _ = sess.set_produce_proofs(true);
     if sess.push().is_ok() {
         let _ = sess.assert_sexp(&Sexp::atom("false"));
-        if matches!(sess.check_sat(), Ok(Status::Unsat)) {
+        if proofs_enabled && matches!(sess.check_sat(), Ok(Status::Unsat)) {
             if let Ok(pf) = sess.get_proof() {
                 // Some solvers respond with `(error ...)` or `unsupported`.
                 if !is_errorish(&pf) {
@@ -642,5 +839,138 @@ pub fn decode_get_value_pairs(resp: Sexp) -> Result<Vec<(Sexp, Sexp)>, SessionEr
             Ok(out)
         }
         _ => Err(SessionError::BadGetValue),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod process_tests {
+    use super::*;
+    use std::time::Instant;
+
+    fn shell_session(script: &str) -> SmtlibSession {
+        SmtlibSession::spawn("sh", &["-c", script]).expect("spawn fake solver")
+    }
+
+    #[test]
+    fn unsupported_is_typed_without_misaligning_next_status() {
+        let mut session = shell_session(
+            "n=0; while IFS= read -r line; do case \"$line\" in *check-sat*) \
+             if [ $n -eq 0 ]; then printf 'unsupported\\n'; else printf 'sat\\n'; fi; \
+             n=$((n + 1));; esac; done",
+        );
+
+        assert!(matches!(
+            session.check_sat(),
+            Err(SessionError::Unsupported)
+        ));
+        assert_eq!(session.check_sat().unwrap(), Status::Sat);
+    }
+
+    #[test]
+    fn solver_error_is_typed_without_misaligning_next_status() {
+        let mut session = shell_session(
+            "n=0; while IFS= read -r line; do case \"$line\" in *check-sat*) \
+             if [ $n -eq 0 ]; then printf '(error \"bad option\")\\n'; else printf 'sat\\n'; fi; \
+             n=$((n + 1));; esac; done",
+        );
+
+        let error = session.check_sat().expect_err("solver error must surface");
+        assert!(matches!(
+            error,
+            SessionError::Solver { ref message } if message.contains("bad option")
+        ));
+        assert_eq!(session.check_sat().unwrap(), Status::Sat);
+    }
+
+    #[test]
+    fn checked_command_surfaces_unsupported_without_misaligning_next_query() {
+        let mut session = shell_session(
+            "while IFS= read -r line; do case \"$line\" in \
+             *set-option*) printf 'unsupported\\n' ;; \
+             *smtkit-sync-0*) printf '\"smtkit-sync-0\"\\n' ;; \
+             *check-sat*) printf 'sat\\n' ;; esac; done",
+        );
+
+        assert!(matches!(
+            session.set_timeout_ms(1),
+            Err(SessionError::Unsupported)
+        ));
+        assert_eq!(session.check_sat().unwrap(), Status::Sat);
+    }
+
+    #[test]
+    fn stderr_is_drained_while_capture_stays_bounded() {
+        let mut session = shell_session(
+            "i=0; while [ $i -lt 20000 ]; do \
+             printf '0123456789abcdef\\n' >&2; i=$((i + 1)); done; \
+             while IFS= read -r line; do \
+             case \"$line\" in *check-sat*) printf 'sat\\n' ;; esac; done",
+        );
+        session.set_wall_timeout(Duration::from_secs(5));
+
+        assert_eq!(session.check_sat().unwrap(), Status::Sat);
+        let diagnostics = session.stderr_tail();
+        assert!(!diagnostics.is_empty());
+        assert!(diagnostics.len() <= STDERR_TAIL_LIMIT);
+    }
+
+    #[test]
+    fn wall_timeout_terminates_and_reaps_solver() {
+        let mut session = shell_session(
+            "while IFS= read -r line; do \
+             case \"$line\" in *check-sat*) exec sleep 10 ;; esac; done",
+        );
+        session.set_wall_timeout(Duration::from_millis(50));
+        let started = Instant::now();
+
+        assert!(matches!(
+            session.check_sat(),
+            Err(SessionError::Timeout {
+                operation: "check-sat",
+                ..
+            })
+        ));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(session.child.try_wait().unwrap().is_some());
+        assert!(session.stdout_thread.is_none());
+        assert!(session.stderr_thread.is_none());
+    }
+
+    #[test]
+    fn exit_is_also_bounded_by_wall_timeout() {
+        let mut session = shell_session(
+            "while IFS= read -r line; do \
+             case \"$line\" in *exit*) exec sleep 10 ;; esac; done",
+        );
+        session.set_wall_timeout(Duration::from_millis(50));
+        let started = Instant::now();
+
+        assert!(matches!(
+            session.exit(),
+            Err(SessionError::Timeout {
+                operation: "exit",
+                ..
+            })
+        ));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn wall_timeout_bounds_the_whole_response_not_each_line() {
+        let mut session = shell_session(
+            "while IFS= read -r line; do \
+             case \"$line\" in *check-sat*) while :; do printf 'success\\n'; done ;; esac; done",
+        );
+        session.set_wall_timeout(Duration::from_millis(50));
+        let started = Instant::now();
+
+        assert!(matches!(
+            session.check_sat(),
+            Err(SessionError::Timeout {
+                operation: "check-sat",
+                ..
+            })
+        ));
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }

@@ -27,13 +27,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     eprintln!("using solver: {used}");
 
-    sess.set_logic("QF_LIA")?;
+    // Capability-enabling options precede set-logic because some solvers
+    // freeze them when the logical context is initialized.
     sess.set_print_success(false)?;
     sess.set_produce_models(true)?;
+    sess.set_logic("QF_LIA")?;
 
     // Determinism hooks (best-effort; solver-dependent).
-    sess.set_timeout_ms(2_000)?;
-    sess.set_random_seed(0)?;
+    let _ = sess.set_timeout_ms(2_000);
+    let _ = sess.set_random_seed(0);
 
     // Trivial sat problem with one variable.
     sess.declare_const("x", &smtkit::smt2::Sort::Int.to_smt2())?;
