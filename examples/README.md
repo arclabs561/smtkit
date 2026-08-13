@@ -88,10 +88,11 @@ no individual can be both a Penguin and a Flyer.
 
 ## Solver sessions
 
-### `session_determinism_hooks`: is the solver session reproducible?
+### `session_determinism_hooks`: is the solver session repeatable?
 
 Runs a small SAT query through a solver session with deterministic options.
-Needs `z3-bin` and a system `z3`.
+This controls seeds and option ordering; it does not normalize differences
+between solver builds or platforms. Needs `z3-bin` and a system `z3`.
 
 ```bash
 cargo run --release --features z3-bin --example session_determinism_hooks

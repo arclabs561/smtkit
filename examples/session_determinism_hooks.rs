@@ -1,6 +1,6 @@
-//! Smoke test for the determinism hooks that make solver runs reproducible:
-//! fixed seeds and stable option ordering so the same script yields the same
-//! model across machines, which is what lets SMT results be cached and diffed.
+//! Smoke test for determinism hooks: fixed seeds and stable option ordering.
+//! These make runs repeatable with a fixed solver build and configuration;
+//! they do not normalize solver or platform differences.
 //! Needs the `z3-bin` feature (shells out to a system `z3`).
 //!
 //! Run: `cargo run --example session_determinism_hooks --features z3-bin`
