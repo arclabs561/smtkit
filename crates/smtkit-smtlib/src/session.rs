@@ -9,7 +9,7 @@
 
 use std::io::ErrorKind;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -85,7 +85,8 @@ pub enum SessionError {
 /// A running solver process speaking SMT-LIB over stdio.
 pub struct SmtlibSession {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<mpsc::Sender<StdinRequest>>,
+    stdin_thread: Option<JoinHandle<()>>,
     stdout: mpsc::Receiver<Result<String, std::io::Error>>,
     stdout_thread: Option<JoinHandle<()>>,
     stderr_thread: Option<JoinHandle<()>>,
@@ -97,6 +98,11 @@ pub struct SmtlibSession {
 
 const DEFAULT_WALL_TIMEOUT: Duration = Duration::from_secs(30);
 const STDERR_TAIL_LIMIT: usize = 16 * 1024;
+
+struct StdinRequest {
+    bytes: Vec<u8>,
+    completed: mpsc::SyncSender<Result<(), std::io::Error>>,
+}
 
 impl SmtlibSession {
     /// Spawn a solver process.
@@ -118,9 +124,20 @@ impl SmtlibSession {
             cmd: display_cmd,
             source: e,
         })?;
-        let stdin = child.stdin.take().ok_or(SessionError::MissingStdin)?;
+        let mut stdin = child.stdin.take().ok_or(SessionError::MissingStdin)?;
         let stdout = child.stdout.take().ok_or(SessionError::MissingStdout)?;
         let stderr = child.stderr.take();
+        let (stdin_tx, stdin_rx) = mpsc::channel::<StdinRequest>();
+        let stdin_thread = std::thread::spawn(move || {
+            while let Ok(request) = stdin_rx.recv() {
+                let result = stdin.write_all(&request.bytes).and_then(|()| stdin.flush());
+                let failed = result.is_err();
+                let _ = request.completed.send(result);
+                if failed {
+                    break;
+                }
+            }
+        });
         let (stdout_tx, stdout_rx) = mpsc::sync_channel(64);
         let stdout_thread = std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
@@ -161,7 +178,8 @@ impl SmtlibSession {
         });
         Ok(Self {
             child,
-            stdin,
+            stdin: Some(stdin_tx),
+            stdin_thread: Some(stdin_thread),
             stdout: stdout_rx,
             stdout_thread: Some(stdout_thread),
             stderr_thread,
@@ -172,7 +190,8 @@ impl SmtlibSession {
         })
     }
 
-    /// Set the maximum wall-clock time spent waiting for any single solver response.
+    /// Set the maximum wall-clock time spent writing a command or waiting for
+    /// any single solver response.
     ///
     /// A timeout terminates and reaps the child process; the session cannot be reused.
     pub fn set_wall_timeout(&mut self, timeout: Duration) {
@@ -212,11 +231,38 @@ impl SmtlibSession {
         if self.poisoned {
             return Err(SessionError::Poisoned);
         }
-        self.stdin
-            .write_all(s.as_bytes())
-            .map_err(SessionError::Stdin)?;
-        self.stdin.flush().map_err(SessionError::Stdin)?;
-        Ok(())
+        let (completed_tx, completed_rx) = mpsc::sync_channel(1);
+        let request = StdinRequest {
+            bytes: s.as_bytes().to_vec(),
+            completed: completed_tx,
+        };
+        if self
+            .stdin
+            .as_ref()
+            .ok_or(SessionError::Poisoned)?
+            .send(request)
+            .is_err()
+        {
+            return Err(SessionError::Stdin(std::io::Error::new(
+                ErrorKind::BrokenPipe,
+                "solver stdin writer stopped",
+            )));
+        }
+        match completed_rx.recv_timeout(self.wall_timeout) {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(SessionError::Stdin(error)),
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(SessionError::Stdin(
+                std::io::Error::new(ErrorKind::BrokenPipe, "solver stdin writer stopped"),
+            )),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                self.poisoned = true;
+                self.terminate_and_reap();
+                Err(SessionError::Timeout {
+                    operation: "solver stdin write",
+                    timeout: self.wall_timeout,
+                })
+            }
+        }
     }
 
     /// Read the next non-empty line from stdout (trimmed).
@@ -638,6 +684,7 @@ impl SmtlibSession {
     /// This is best-effort; some solvers may exit immediately, others may flush output first.
     pub fn exit(mut self) -> Result<std::process::ExitStatus, SessionError> {
         let _ = self.send_raw("(exit)\n");
+        self.stdin.take();
         let status = self.wait_for_exit("exit")?;
         self.join_readers();
         Ok(status)
@@ -649,6 +696,7 @@ impl SmtlibSession {
     }
 
     fn terminate_and_reap(&mut self) {
+        self.stdin.take();
         if self.child.try_wait().ok().flatten().is_none() {
             let _ = self.child.kill();
         }
@@ -678,18 +726,26 @@ impl SmtlibSession {
     }
 
     fn join_readers(&mut self) {
+        Self::join_if_finished(&mut self.stdin_thread);
         if let Some(thread) = self.stdout_thread.take() {
-            while !thread.is_finished() {
-                match self.stdout.try_recv() {
-                    Ok(_) => {}
-                    Err(mpsc::TryRecvError::Empty) => std::thread::yield_now(),
-                    Err(mpsc::TryRecvError::Disconnected) => break,
-                }
+            while self.stdout.try_recv().is_ok() {}
+            if thread.is_finished() {
+                let _ = thread.join();
+            } else {
+                // A descendant may have inherited the solver's stdout pipe.
+                // Dropping the handle detaches the reader instead of making
+                // session teardown wait for an unrelated process lifetime.
+                self.stdout_thread = Some(thread);
             }
-            let _ = thread.join();
         }
-        if let Some(thread) = self.stderr_thread.take() {
-            let _ = thread.join();
+        Self::join_if_finished(&mut self.stderr_thread);
+    }
+
+    fn join_if_finished(thread: &mut Option<JoinHandle<()>>) {
+        if thread.as_ref().is_some_and(JoinHandle::is_finished) {
+            if let Some(thread) = thread.take() {
+                let _ = thread.join();
+            }
         }
     }
 }
@@ -932,8 +988,68 @@ mod process_tests {
         ));
         assert!(started.elapsed() < Duration::from_secs(2));
         assert!(session.child.try_wait().unwrap().is_some());
-        assert!(session.stdout_thread.is_none());
-        assert!(session.stderr_thread.is_none());
+    }
+
+    #[test]
+    fn timeout_does_not_join_pipes_inherited_by_descendants() {
+        let mut session = shell_session(
+            "sleep 3 & while IFS= read -r line; do \
+             case \"$line\" in *check-sat*) sleep 3 ;; esac; done",
+        );
+        session.set_wall_timeout(Duration::from_millis(50));
+        let started = Instant::now();
+
+        assert!(matches!(
+            session.check_sat(),
+            Err(SessionError::Timeout {
+                operation: "check-sat",
+                ..
+            })
+        ));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(session.child.try_wait().unwrap().is_some());
+    }
+
+    #[test]
+    fn drop_does_not_join_pipes_inherited_by_descendants() {
+        let started = Instant::now();
+        {
+            let _session = shell_session("sleep 3 & while IFS= read -r line; do :; done");
+        }
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn wall_timeout_includes_blocked_stdin_write() {
+        let mut session = shell_session("sleep 3");
+        session.set_wall_timeout(Duration::from_millis(50));
+        let command = "x".repeat(8 * 1024 * 1024);
+        let started = Instant::now();
+
+        assert!(matches!(
+            session.send_raw(&command),
+            Err(SessionError::Timeout {
+                operation: "solver stdin write",
+                ..
+            })
+        ));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(matches!(session.send_raw("x"), Err(SessionError::Poisoned)));
+    }
+
+    #[test]
+    fn checked_command_rejects_unexpected_echo_fence_response() {
+        let mut session = shell_session(
+            "while IFS= read -r line; do case \"$line\" in \
+             *smtkit-sync-0*) printf 'forged-fence\\n' ;; esac; done",
+        );
+
+        let error = session.push().expect_err("unexpected fence must fail");
+        assert!(matches!(
+            error,
+            SessionError::Solver { ref message } if message.contains("forged-fence")
+        ));
+        assert!(matches!(session.check_sat(), Err(SessionError::Poisoned)));
     }
 
     #[test]
