@@ -10,7 +10,10 @@
 use std::io::ErrorKind;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    mpsc, Arc, Mutex,
+};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -42,6 +45,7 @@ pub enum Status {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum SessionError {
     #[error("failed to spawn solver process: {cmd}")]
     Spawn {
@@ -68,6 +72,8 @@ pub enum SessionError {
         operation: &'static str,
         timeout: Duration,
     },
+    #[error("solver response exceeded the configured {limit}-byte limit")]
+    ResponseTooLarge { limit: usize },
     #[error("solver session is unusable after an earlier protocol or timeout error")]
     Poisoned,
     #[error("unknown solver status line: {0}")]
@@ -87,21 +93,77 @@ pub struct SmtlibSession {
     child: Child,
     stdin: Option<mpsc::Sender<StdinRequest>>,
     stdin_thread: Option<JoinHandle<()>>,
-    stdout: mpsc::Receiver<Result<String, std::io::Error>>,
+    stdout: mpsc::Receiver<StdoutEvent>,
     stdout_thread: Option<JoinHandle<()>>,
     stderr_thread: Option<JoinHandle<()>>,
     stderr_tail: Arc<Mutex<Vec<u8>>>,
     wall_timeout: Duration,
+    max_response_bytes: Arc<AtomicUsize>,
     poisoned: bool,
     next_sync_id: u64,
 }
 
 const DEFAULT_WALL_TIMEOUT: Duration = Duration::from_secs(30);
 const STDERR_TAIL_LIMIT: usize = 16 * 1024;
+/// Large enough for ordinary models and captured proof objects while bounding
+/// one untrusted solver response.
+const DEFAULT_MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 struct StdinRequest {
     bytes: Vec<u8>,
     completed: mpsc::SyncSender<Result<(), std::io::Error>>,
+}
+
+enum StdoutEvent {
+    Line(String),
+    Io(std::io::Error),
+    ResponseTooLarge { limit: usize },
+}
+
+/// Read exactly one line without retaining more bytes than the response limit.
+///
+/// `BufRead::read_line` allocates until it encounters a newline, so it cannot
+/// enforce this boundary when a solver emits one giant unterminated line.
+fn read_bounded_line<R: BufRead>(
+    reader: &mut R,
+    max_response_bytes: &AtomicUsize,
+) -> Result<Option<String>, StdoutEvent> {
+    let mut bytes = Vec::new();
+    loop {
+        let (take, has_newline) = {
+            let available = reader.fill_buf().map_err(StdoutEvent::Io)?;
+            if available.is_empty() {
+                if bytes.is_empty() {
+                    return Ok(None);
+                }
+                let text = String::from_utf8(bytes).map_err(|error| {
+                    StdoutEvent::Io(std::io::Error::new(ErrorKind::InvalidData, error))
+                })?;
+                return Ok(Some(text));
+            }
+            match available.iter().position(|byte| *byte == b'\n') {
+                Some(index) => (index + 1, true),
+                None => (available.len(), false),
+            }
+        };
+
+        let limit = max_response_bytes.load(Ordering::Relaxed);
+        if bytes.len().saturating_add(take) > limit {
+            return Err(StdoutEvent::ResponseTooLarge { limit });
+        }
+
+        {
+            let available = reader.fill_buf().map_err(StdoutEvent::Io)?;
+            bytes.extend_from_slice(&available[..take]);
+        }
+        reader.consume(take);
+        if has_newline {
+            let text = String::from_utf8(bytes).map_err(|error| {
+                StdoutEvent::Io(std::io::Error::new(ErrorKind::InvalidData, error))
+            })?;
+            return Ok(Some(text));
+        }
+    }
 }
 
 impl SmtlibSession {
@@ -138,20 +200,23 @@ impl SmtlibSession {
                 }
             }
         });
-        let (stdout_tx, stdout_rx) = mpsc::sync_channel(64);
+        let max_response_bytes = Arc::new(AtomicUsize::new(DEFAULT_MAX_RESPONSE_BYTES));
+        let reader_limit = Arc::clone(&max_response_bytes);
+        // One queued line means the reader cannot accumulate an unbounded
+        // aggregate behind a slow response parser.
+        let (stdout_tx, stdout_rx) = mpsc::sync_channel(1);
         let stdout_thread = std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
             loop {
-                let mut line = String::new();
-                match reader.read_line(&mut line) {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        if stdout_tx.send(Ok(line)).is_err() {
+                match read_bounded_line(&mut reader, &reader_limit) {
+                    Ok(None) => break,
+                    Ok(Some(line)) => {
+                        if stdout_tx.send(StdoutEvent::Line(line)).is_err() {
                             break;
                         }
                     }
-                    Err(error) => {
-                        let _ = stdout_tx.send(Err(error));
+                    Err(event) => {
+                        let _ = stdout_tx.send(event);
                         break;
                     }
                 }
@@ -185,6 +250,7 @@ impl SmtlibSession {
             stderr_thread,
             stderr_tail,
             wall_timeout: DEFAULT_WALL_TIMEOUT,
+            max_response_bytes,
             poisoned: false,
             next_sync_id: 0,
         })
@@ -196,6 +262,18 @@ impl SmtlibSession {
     /// A timeout terminates and reaps the child process; the session cannot be reused.
     pub fn set_wall_timeout(&mut self, timeout: Duration) {
         self.wall_timeout = timeout;
+    }
+
+    /// Set the maximum number of bytes in one solver response.
+    ///
+    /// This bounds the bytes retained for each stdout line and the cumulative text
+    /// of a balanced SMT-LIB response. It is not a bound on all memory held by
+    /// the session: a reader's partial line, one queued line, and the response
+    /// accumulator can briefly coexist. A zero limit rejects every non-empty
+    /// solver response. Breaching the limit terminates and reaps the direct
+    /// solver child; the session cannot be reused.
+    pub fn set_max_response_bytes(&mut self, limit: usize) {
+        self.max_response_bytes.store(limit, Ordering::Relaxed);
     }
 
     /// Return the bounded tail of solver diagnostics captured from stderr.
@@ -282,8 +360,19 @@ impl SmtlibSession {
         }
         let remaining = self.wall_timeout - elapsed;
         match self.stdout.recv_timeout(remaining) {
-            Ok(Ok(line)) => Ok(line),
-            Ok(Err(error)) => Err(SessionError::Stdout(error)),
+            Ok(StdoutEvent::Line(line)) => {
+                // The reader may have accepted this line before a concurrent
+                // caller lowered the shared limit. Recheck at the consumer
+                // boundary before exposing it to a response parser.
+                let limit = self.max_response_bytes.load(Ordering::Relaxed);
+                if line.len() > limit {
+                    self.fail_response_limit(limit)
+                } else {
+                    Ok(line)
+                }
+            }
+            Ok(StdoutEvent::Io(error)) => Err(SessionError::Stdout(error)),
+            Ok(StdoutEvent::ResponseTooLarge { limit }) => self.fail_response_limit(limit),
             Err(mpsc::RecvTimeoutError::Disconnected) => Err(SessionError::Eof),
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 self.poisoned = true;
@@ -313,6 +402,12 @@ impl SmtlibSession {
         self.poisoned = true;
         self.terminate_and_reap();
         Err(error)
+    }
+
+    fn fail_response_limit<T>(&mut self, limit: usize) -> Result<T, SessionError> {
+        self.poisoned = true;
+        self.terminate_and_reap();
+        Err(SessionError::ResponseTooLarge { limit })
     }
 
     /// Send a command that normally has no specific response, then use SMT-LIB
@@ -473,6 +568,10 @@ impl SmtlibSession {
                 }
             }
 
+            let limit = self.max_response_bytes.load(Ordering::Relaxed);
+            if buf.len().saturating_add(line.len()) > limit {
+                return self.fail_response_limit(limit);
+            }
             scan_line_update_depth(&line, &mut depth, &mut started, &mut state);
             buf.push_str(&line);
 
@@ -1088,5 +1187,65 @@ mod process_tests {
             })
         ));
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn unterminated_line_one_byte_over_limit_is_terminal_before_newline() {
+        let mut session = shell_session(
+            "while IFS= read -r line; do case \"$line\" in *check-sat*) \\
+             i=0; while [ $i -lt 65 ]; do printf x; i=$((i + 1)); done; sleep 10 ;; esac; done",
+        );
+        session.set_max_response_bytes(64);
+        session.set_wall_timeout(Duration::from_secs(1));
+        let started = Instant::now();
+
+        assert!(matches!(
+            session.check_sat(),
+            Err(SessionError::ResponseTooLarge { limit: 64 })
+        ));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(session.child.try_wait().unwrap().is_some());
+        assert!(matches!(session.check_sat(), Err(SessionError::Poisoned)));
+    }
+
+    #[test]
+    fn balanced_response_limit_counts_all_lines_and_newlines() {
+        let mut session = shell_session(
+            "while IFS= read -r line; do case \"$line\" in *get-info*) \\
+             printf '(a\\n'; printf 'bbb\\n'; printf 'x\\n' ;; esac; done",
+        );
+        session.set_max_response_bytes(8);
+
+        assert!(matches!(
+            session.get_info(":name"),
+            Err(SessionError::ResponseTooLarge { limit: 8 })
+        ));
+        assert!(session.child.try_wait().unwrap().is_some());
+    }
+
+    #[test]
+    fn balanced_response_exactly_at_limit_is_accepted() {
+        let mut session = shell_session(
+            "while IFS= read -r line; do case \"$line\" in *get-info*) printf '(a)\\n' ;; esac; done",
+        );
+        session.set_max_response_bytes(4);
+
+        assert_eq!(session.get_info(":name").unwrap().to_string(), "(a)");
+    }
+
+    #[test]
+    fn lowered_limit_is_checked_again_when_a_queued_line_is_consumed() {
+        let mut session = shell_session(
+            "while IFS= read -r line; do case \"$line\" in *check-sat*) printf 'sat\\n' ;; esac; done",
+        );
+        session.set_max_response_bytes(4);
+        session.send_raw("(check-sat)\n").unwrap();
+        session.set_max_response_bytes(3);
+
+        assert!(matches!(
+            session.read_nonempty_line("test response limit"),
+            Err(SessionError::ResponseTooLarge { limit: 3 })
+        ));
+        assert!(session.child.try_wait().unwrap().is_some());
     }
 }
