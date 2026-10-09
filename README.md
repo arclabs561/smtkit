@@ -5,6 +5,23 @@
 
 SMT solver toolkit.
 
+## Library example: build an SMT-LIB2 script (no solver needed)
+
+```rust
+use smtkit::smt2::{t, Script, Sort, Var};
+
+let x = Var::new("x", Sort::Int);
+let mut s = Script::new();
+s.set_logic("QF_LIA");
+s.declare_const(&x);
+s.assert(t::lt(x.sym(), t::int_lit(-3)));
+s.check_sat();
+
+let text = s.to_string();
+assert!(text.contains("(declare-const x Int)"));
+assert!(text.contains("(assert (< x (- 3)))"));
+```
+
 ## Quickstart: probe solver capabilities
 
 If you have a solver on PATH (e.g. `z3`), run:
@@ -94,7 +111,7 @@ examples shell out to a system `z3`; `z3-inproc` examples drive Z3 in process.
 
 ## Versioning + pinning policy (recommended)
 
-- **Apps should pin**: if you build a tool like `proofpatch`, prefer `smtkit = "0.x.y"` (crates.io) and commit `Cargo.lock`.
+- **Apps should pin**: if you build a tool, prefer `smtkit = "0.x.y"` (crates.io) and commit `Cargo.lock`.
 - **Libraries can float**: if you’re publishing a library, prefer semver ranges and do not commit `Cargo.lock`.
 - **Pre-release testing**: for unreleased changes, temporarily pin a git tag (e.g. `v0.1.1`) or a git rev, then switch back to crates.io on release.
 

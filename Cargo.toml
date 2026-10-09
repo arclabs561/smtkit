@@ -2,6 +2,7 @@
 name = "smtkit"
 version = "0.1.2"
 edition = "2021"
+rust-version = "1.80"
 license = "MIT OR Apache-2.0"
 description = "SMT solver toolkit"
 repository = "https://github.com/arclabs561/smtkit"
@@ -9,6 +10,16 @@ homepage = "https://github.com/arclabs561/smtkit"
 documentation = "https://docs.rs/smtkit"
 readme = "README.md"
 publish = true
+include = [
+  "src/**",
+  "examples/**",
+  "tests/**",
+  "README.md",
+  "CHANGELOG.md",
+  "LICENSE",
+  "LICENSE-APACHE",
+  "LICENSE-MIT",
+]
 keywords = ["smt", "smtlib", "z3", "solver", "formal-methods"]
 
 [workspace]

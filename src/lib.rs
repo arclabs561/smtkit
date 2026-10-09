@@ -10,6 +10,11 @@
 //! - Use **`z3-inproc`** only when you specifically want in-process Z3; it may require system Z3 headers
 //!   (and/or a CMake toolchain if you enable bundled builds in the underlying Z3 crate).
 
+// Compile and run the README's Rust examples as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;
+
 pub use smtkit_smtlib::session;
 pub use smtkit_smtlib::{sexp, smt2, solver};
 
