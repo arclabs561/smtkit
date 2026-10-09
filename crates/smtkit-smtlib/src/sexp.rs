@@ -280,6 +280,29 @@ mod tests {
         assert!(parse_one(&input).is_ok());
     }
 
+    /// `parse(print(x)) == x` for printed terms, including bar-quoted
+    /// symbols produced by `emit::quote_symbol`.
+    #[test]
+    fn print_then_parse_round_trips() {
+        let quoted = |n: &str| Sexp::atom(crate::emit::quote_symbol(n));
+        let cases = vec![
+            Sexp::atom("x"),
+            quoted("my var"),
+            quoted("1abc"),
+            quoted("a(b)"),
+            Sexp::atom("\"a \"\"quoted\"\" string\""),
+            Sexp::list(vec![
+                Sexp::atom("assert"),
+                Sexp::list(vec![Sexp::atom("="), quoted("x y"), Sexp::atom("42")]),
+            ]),
+            Sexp::list(vec![]),
+        ];
+        for x in cases {
+            let printed = x.to_string();
+            assert_eq!(parse_one(&printed).unwrap(), x, "printed: {printed}");
+        }
+    }
+
     #[test]
     fn parse_bar_quoted_symbol_atom() {
         let s = parse_one("(|a b| c)").unwrap();

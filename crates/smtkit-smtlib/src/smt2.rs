@@ -152,7 +152,12 @@ pub mod t {
     }
 
     pub fn int_lit(v: i64) -> Sexp {
-        Sexp::atom(v.to_string())
+        // SMT-LIB has no negative numerals: `-5` must be `(- 5)`.
+        if v < 0 {
+            app("-", vec![Sexp::atom(v.unsigned_abs().to_string())])
+        } else {
+            Sexp::atom(v.to_string())
+        }
     }
 
     pub fn bv_lit(value: u64, width: u32) -> Sexp {
@@ -205,5 +210,17 @@ pub mod t {
 
     pub fn add(args: impl Into<Vec<Sexp>>) -> Sexp {
         app("+", args)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::t;
+
+    #[test]
+    fn negative_int_literal_is_unary_minus_application() {
+        assert_eq!(t::int_lit(-5).to_string(), "(- 5)");
+        assert_eq!(t::int_lit(i64::MIN).to_string(), "(- 9223372036854775808)");
+        assert_eq!(t::int_lit(7).to_string(), "7");
     }
 }
