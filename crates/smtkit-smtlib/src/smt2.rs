@@ -42,7 +42,7 @@ impl Var {
     }
 
     pub fn sym(&self) -> Sexp {
-        Sexp::atom(&self.name)
+        Sexp::atom(crate::emit::quote_symbol(&self.name))
     }
 }
 

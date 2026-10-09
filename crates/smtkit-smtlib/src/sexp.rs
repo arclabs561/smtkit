@@ -65,11 +65,18 @@ pub enum ParseError {
     Unexpected(char),
     #[error("trailing input after s-expression")]
     Trailing,
+    #[error("s-expression nested deeper than {MAX_DEPTH} levels")]
+    TooDeep,
 }
+
+/// Maximum list nesting accepted by [`parse_one`]. The parser is recursive, so
+/// an unbounded depth would overflow the stack on hostile or corrupt input.
+pub const MAX_DEPTH: usize = 512;
 
 struct Parser<'a> {
     s: &'a [u8],
     i: usize,
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -77,6 +84,7 @@ impl<'a> Parser<'a> {
         Self {
             s: s.as_bytes(),
             i: 0,
+            depth: 0,
         }
     }
 
@@ -126,6 +134,10 @@ impl<'a> Parser<'a> {
             Some(c) => return Err(ParseError::Unexpected(c as char)),
             None => return Err(ParseError::Eof),
         }
+        if self.depth >= MAX_DEPTH {
+            return Err(ParseError::TooDeep);
+        }
+        self.depth += 1;
         let mut items = Vec::new();
         loop {
             self.skip_ws();
@@ -138,6 +150,7 @@ impl<'a> Parser<'a> {
                 _ => items.push(self.parse_sexp()?),
             }
         }
+        self.depth -= 1;
         Ok(Sexp::List(items))
     }
 
@@ -246,6 +259,25 @@ mod tests {
     fn parse_atom_with_comment_skips_comment() {
         let s = parse_one("(a b) ; comment here\n").unwrap();
         assert_eq!(s.to_string(), "(a b)");
+    }
+
+    #[test]
+    fn deeply_nested_input_is_an_error_not_a_stack_overflow() {
+        let n = 100_000;
+        let input = format!("{}{}", "(".repeat(n), ")".repeat(n));
+        assert!(matches!(parse_one(&input), Err(ParseError::TooDeep)));
+        // Unbalanced too.
+        assert!(matches!(
+            parse_one(&"(".repeat(n)),
+            Err(ParseError::TooDeep)
+        ));
+    }
+
+    #[test]
+    fn nesting_up_to_the_limit_parses() {
+        let n = MAX_DEPTH;
+        let input = format!("{}{}", "(".repeat(n), ")".repeat(n));
+        assert!(parse_one(&input).is_ok());
     }
 
     #[test]
