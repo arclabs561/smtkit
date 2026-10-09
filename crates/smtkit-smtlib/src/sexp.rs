@@ -58,6 +58,7 @@ pub fn parse_one(input: &str) -> Result<Sexp, ParseError> {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ParseError {
     #[error("unexpected end of input")]
     Eof,
