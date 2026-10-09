@@ -1,6 +1,6 @@
 [package]
 name = "smtkit"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.80"
 license = "MIT OR Apache-2.0"
@@ -40,7 +40,7 @@ serde_json = "1.0"
 anyhow = "1"
 thiserror = "2"
 smtkit-core = { version = "0.1.0", path = "crates/smtkit-core" }
-smtkit-smtlib = { version = "0.1.0", path = "crates/smtkit-smtlib" }
+smtkit-smtlib = { version = "0.2.0", path = "crates/smtkit-smtlib" }
 smtkit-z3 = { version = "0.1.0", path = "crates/smtkit-z3", optional = true }
 
 [features]
