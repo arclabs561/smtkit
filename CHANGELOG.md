@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Script and session `set_logic` helpers render the logic name as a single
+  symbol using the existing symbol formatter. Unrepresentable names panic before
+  changing the script or writing to the solver, matching the declaration helpers.
+- Script comments prefix every line after either CR or LF, keeping multiline
+  diagnostic text in comments.
+- CI runs the field-serialization regressions with an external Z3 solver.
+
 ## smtkit 0.2.0 and smtkit-smtlib 0.2.0 - 2026-10-09
 
 ### Changed
@@ -26,4 +35,3 @@
 ## 0.1.0
 
 - Initial crates.io release.
-

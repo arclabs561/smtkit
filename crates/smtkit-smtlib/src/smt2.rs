@@ -62,11 +62,15 @@ impl Script {
         Self { items: Vec::new() }
     }
 
+    /// Select a logic, rendering its name as one SMT-LIB symbol.
+    ///
+    /// # Panics
+    ///
+    /// Panics before adding a command if [`crate::emit::quote_symbol`] rejects the name.
     pub fn set_logic(&mut self, logic: impl Into<String>) {
-        self.items.push(Sexp::list(vec![
-            Sexp::atom("set-logic"),
-            Sexp::atom(logic.into()),
-        ]));
+        let logic = crate::emit::quote_symbol(&logic.into());
+        self.items
+            .push(Sexp::list(vec![Sexp::atom("set-logic"), Sexp::atom(logic)]));
     }
 
     pub fn set_option(&mut self, key: impl Into<String>, value: Sexp) {
@@ -77,10 +81,16 @@ impl Script {
         ]));
     }
 
+    /// Add diagnostic text as comments, preserving line endings.
     pub fn comment(&mut self, text: impl AsRef<str>) {
-        // SMT-LIB comments start with ';' to end-of-line.
+        // SMT-LIB comments end at either ASCII LF or CR.
         let mut s = String::from(";");
-        s.push_str(text.as_ref());
+        for c in text.as_ref().chars() {
+            s.push(c);
+            if matches!(c, '\n' | '\r') {
+                s.push(';');
+            }
+        }
         self.items.push(Sexp::atom(s));
     }
 

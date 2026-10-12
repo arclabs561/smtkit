@@ -592,7 +592,14 @@ impl SmtlibSession {
     }
 
     /// `(set-logic LOGIC)` (no response expected).
+    ///
+    /// The logic name is rendered as one SMT-LIB symbol.
+    ///
+    /// # Panics
+    ///
+    /// Panics before writing to the solver if [`crate::emit::quote_symbol`] rejects the name.
     pub fn set_logic(&mut self, logic: &str) -> Result<(), SessionError> {
+        let logic = crate::emit::quote_symbol(logic);
         self.send_checked(&format!("(set-logic {logic})\n"), "set-logic")
     }
 
