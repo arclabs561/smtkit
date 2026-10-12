@@ -663,6 +663,11 @@ impl SmtlibSession {
     }
 
     /// `(declare-const NAME SORT)` (no response expected).
+    ///
+    /// # Panics
+    ///
+    /// Panics before sending a command if [`crate::emit::quote_symbol`] rejects
+    /// the name.
     pub fn declare_const(&mut self, name: &str, sort: &Sexp) -> Result<(), SessionError> {
         let name = crate::emit::quote_symbol(name);
         self.send_checked(&format!("(declare-const {name} {sort})\n"), "declare-const")

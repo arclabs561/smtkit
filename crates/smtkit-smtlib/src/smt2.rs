@@ -41,6 +41,11 @@ impl Var {
         }
     }
 
+    /// Render the variable name as a symbol.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the name cannot be represented by [`crate::emit::quote_symbol`].
     pub fn sym(&self) -> Sexp {
         Sexp::atom(crate::emit::quote_symbol(&self.name))
     }
@@ -79,6 +84,11 @@ impl Script {
         self.items.push(Sexp::atom(s));
     }
 
+    /// Declare a variable.
+    ///
+    /// # Panics
+    ///
+    /// Panics before adding a command if [`Var::sym`] rejects the name.
     pub fn declare_const(&mut self, v: &Var) {
         self.items.push(Sexp::list(vec![
             Sexp::atom("declare-const"),

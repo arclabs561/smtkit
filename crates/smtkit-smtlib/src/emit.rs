@@ -17,9 +17,25 @@ pub fn sort_to_sexp(sort: &smtkit_core::Sort) -> Sexp {
 /// Render `name` as an SMT-LIB symbol, wrapping it in `|...|` unless it is a
 /// simple symbol (non-empty, no leading digit, only letters, digits and
 /// ``~!@$%^&*_-+=<>.?/``). A name already wrapped in bars is returned as is.
-/// Names containing `|` or `\` have no SMT-LIB spelling; they are wrapped
-/// unchanged and the solver will reject them.
+///
+/// # Panics
+///
+/// Panics if the name (inside optional surrounding bars) contains `|`, `\`,
+/// or a character excluded by SMT-LIB 2.7 section 3.1. Such names have no
+/// quoted-symbol spelling and must not be emitted as raw SMT-LIB syntax.
 pub fn quote_symbol(name: &str) -> String {
+    let content = name
+        .strip_prefix('|')
+        .and_then(|s| s.strip_suffix('|'))
+        .unwrap_or(name);
+    assert!(
+        content.chars().all(|c| {
+            c != '|'
+                && c != '\\'
+                && (matches!(c, '\t' | '\n' | '\r') || (c >= ' ' && c != '\u{7f}'))
+        }),
+        "name cannot be represented as an SMT-LIB quoted symbol"
+    );
     let simple = name.chars().next().is_some_and(|c| !c.is_ascii_digit())
         && name
             .chars()
@@ -114,9 +130,18 @@ mod tests {
         assert_eq!(quote_symbol("a(b)"), "|a(b)|");
         assert_eq!(quote_symbol(""), "||");
         assert_eq!(quote_symbol("|already quoted|"), "|already quoted|");
+        assert_eq!(quote_symbol("||"), "||");
+        assert_eq!(quote_symbol("a\n\t\rβ"), "|a\n\t\rβ|");
 
         let mut ctx = Ctx::new();
         let v = ctx.var("my var", Sort::Int);
         assert_eq!(term_to_sexp(&ctx, v).to_string(), "|my var|");
+    }
+
+    #[test]
+    fn unrepresentable_symbols_are_rejected() {
+        for name in ["|", "a|b", "|a|b|", "a\\b", "|a\\b|", "a\0b", "a\u{7f}b"] {
+            assert!(std::panic::catch_unwind(|| quote_symbol(name)).is_err());
+        }
     }
 }
