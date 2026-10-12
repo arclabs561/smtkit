@@ -32,6 +32,14 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
+      - name: install Z3 for SMT-LIB boundary regressions
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes z3
+
+      - name: test SMT-LIB field serialization with Z3
+        run: cargo test --features z3-bin --test smt2_string_boundaries
+
       # Default features generate SMT-LIB2 scripts with no solver, so these
       # examples run without z3. The z3-inproc examples (constrained_soft_path,
       # *_inproc, pareto_frontier) need a system Z3 and are excluded.
@@ -42,4 +50,3 @@ jobs:
           cargo run --example ontology_consistency
           cargo run --example session_determinism_hooks
           cargo run --example enumerate_graph_coloring_session
-
