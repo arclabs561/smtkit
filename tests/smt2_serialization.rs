@@ -109,3 +109,14 @@ fn block_model_emits_blocking_clause() {
 
     assert_eq!(s.to_string(), "(assert (or (not (= x 5)) (not (= y 3))))\n");
 }
+
+#[test]
+fn invalid_symbol_cannot_inject_script_commands() {
+    let mut script = Script::new();
+    let var = Var::new("|x| Bool) (assert false) (declare-const |y|", Sort::Bool);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        script.declare_const(&var);
+    }));
+    assert!(result.is_err(), "invalid symbol emitted: {script}");
+    assert_eq!(script.to_string(), "");
+}
