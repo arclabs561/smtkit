@@ -163,8 +163,14 @@ impl std::fmt::Display for Script {
 pub mod t {
     use super::*;
 
+    /// Render a symbol name, quoting it as needed, just like [`Var::sym`].
+    /// Use [`Sexp::atom`] when supplying an already formatted raw SMT-LIB atom.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the name cannot be represented by [`crate::emit::quote_symbol`].
     pub fn sym(name: impl Into<String>) -> Sexp {
-        Sexp::atom(name.into())
+        Sexp::atom(crate::emit::quote_symbol(&name.into()))
     }
 
     pub fn bool_lit(v: bool) -> Sexp {

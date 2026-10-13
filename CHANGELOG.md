@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- `smt2::t::sym` quotes symbol names consistently with `Var::sym`, including
+  spaces and parentheses, and rejects unrepresentable names using the existing
+  panic convention. Callers supplying raw SMT-LIB spellings can use `Sexp::atom`.
 - Script and session `set_logic` helpers render the logic name as a single
   symbol using the existing symbol formatter. Unrepresentable names panic before
   changing the script or writing to the solver, matching the declaration helpers.

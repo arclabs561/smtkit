@@ -22,6 +22,33 @@ const INVALID_NAMES: &[&str] = &[
 ];
 
 #[test]
+fn term_symbol_names_match_declared_symbols() {
+    use smtkit::smt2::{t, Sort, Var};
+    for (name, expected) in [
+        ("ordinary", "ordinary"),
+        ("two words", "|two words|"),
+        ("(not x)", "|(not x)|"),
+        ("α", "|α|"),
+        ("|prequoted name|", "|prequoted name|"),
+    ] {
+        assert_eq!(t::sym(name).to_string(), expected);
+        assert_eq!(t::sym(name), Var::new(name, Sort::Bool).sym());
+    }
+}
+
+#[test]
+fn term_symbol_rejection_precedes_script_mutation() {
+    use smtkit::smt2::t;
+    let mut script = Script::new();
+    script.set_logic("QF_UF");
+    for name in ["bad|name", "bad\\name", "bad\0name", "bad\u{7f}name"] {
+        let before = script.to_string();
+        assert!(catch_unwind(AssertUnwindSafe(|| script.assert(t::sym(name)))).is_err());
+        assert_eq!(script.to_string(), before);
+    }
+}
+
+#[test]
 fn logic_is_one_symbol_and_invalid_names_leave_script_unchanged() {
     let mut script = Script::new();
     script.set_logic(HOSTILE_LOGIC);
@@ -65,6 +92,39 @@ mod solver {
     use smtkit::session::{SmtlibSession, Status};
     use std::io::Write;
     use std::process::{Command, Stdio};
+
+    #[test]
+    fn term_symbol_references_keep_declared_name_meaning() {
+        use smtkit::smt2::{t, Sort, Var};
+        for name in ["ordinary", "two words", "(not x)", "α", "|prequoted name|"] {
+            let mut script = Script::new();
+            script.set_logic("QF_UF");
+            let x = Var::new("x", Sort::Bool);
+            let named = Var::new(name, Sort::Bool);
+            script.declare_const(&x);
+            script.declare_const(&named);
+            script.assert(x.sym());
+            script.assert(t::sym(name));
+            script.check_sat();
+            let mut child = Command::new("z3")
+                .args(["-in", "-smt2"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("z3-bin boundary tests require z3 on PATH");
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(script.to_string().as_bytes())
+                .unwrap();
+            let output = child.wait_with_output().unwrap();
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            assert!(output.status.success(), "name={name:?}: {stdout}");
+            assert_eq!(stdout.trim(), "sat", "name={name:?}");
+        }
+    }
 
     fn assert_script_sat(script: &Script) {
         let mut child = Command::new("z3")
