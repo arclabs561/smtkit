@@ -107,12 +107,15 @@ examples shell out to a system `z3`; `z3-inproc` examples drive Z3 in process.
 - `session_determinism_hooks` is a smoke test for repeatable solver runs when the solver build and configuration are held fixed. (needs `z3-bin`)
 - `enumerate_graph_coloring_inproc` is the enumeration above run through the in-process backend. (needs `z3-inproc`)
 - `pareto_frontier` enumerates the Pareto frontier of a multi-objective problem, the shape of trade-off analysis in resource allocation. (needs `z3-inproc`)
-- `constrained_soft_path` solves a shortest path with hard SMT constraints plus soft preferences, the mix routing and planning problems usually need. (needs `z3-inproc`)
+- `constrained_soft_path` builds constraint terms, filters a fixed routing graph,
+  and computes soft shortest-path marginals. It does not invoke a solver.
 
 ## Versioning + pinning policy (recommended)
 
-- **Apps should pin**: if you build a tool, prefer `smtkit = "0.x.y"` (crates.io) and commit `Cargo.lock`.
-- **Libraries can float**: if you’re publishing a library, prefer semver ranges and do not commit `Cargo.lock`.
+- **Apps should lock**: use a compatible requirement such as `smtkit = "0.2"`
+  and commit `Cargo.lock` to record the resolved versions.
+- **Libraries**: use semver ranges for dependencies. A library’s lockfile does
+  not constrain downstream applications.
 - **Pre-release testing**: for unreleased changes, temporarily pin a git tag (e.g. `v0.1.1`) or a git rev, then switch back to crates.io on release.
 
 ## License

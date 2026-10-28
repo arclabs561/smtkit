@@ -156,8 +156,9 @@ pareto frontier: 2 non-dominated points
 
 ### `constrained_soft_path`: how do hard constraints and soft path marginals combine?
 
-Uses `smtkit-core` for hard routing constraints and `structops` for soft
-shortest-path marginals over the feasible graph.
+Builds hard routing constraint terms with `smtkit-core`, filters the fixed graph
+in Rust, and computes soft shortest-path marginals with `structops`. No solver
+is invoked.
 
 ```bash
 cargo run --release --example constrained_soft_path
