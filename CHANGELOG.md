@@ -13,6 +13,14 @@
 - Script comments prefix every line after either CR or LF, keeping multiline
   diagnostic text in comments.
 - CI runs the field-serialization regressions with an external Z3 solver.
+- The s-expression parser and the session response reader treat a backslash
+  in a string literal as an ordinary character, as SMT-LIB 2.6 requires.
+  Before, `"a\"` (z3's output for the string `a\`) was read as an unterminated
+  literal: `parse_one` and `parse_z3_output` failed on it, and the session
+  reader waited for the wall timeout.
+- Symbol quoting bar-quotes SMT-LIB reserved words (`_`, `!`, `as`, `let`,
+  `lambda`, command names such as `assert`), which are not simple symbols.
+  Before, a variable named `let` or `assert` was emitted bare.
 
 ## smtkit 0.2.0 and smtkit-smtlib 0.2.0 - 2026-10-09
 

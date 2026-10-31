@@ -211,8 +211,8 @@ impl<'a> Parser<'a> {
 
     /// Parse an SMT-LIB string literal as a single atom.
     ///
-    /// SMT-LIB uses `""` to represent a literal `"` inside a string. We also tolerate `\` escapes
-    /// for robustness against solver-specific output.
+    /// SMT-LIB uses `""` to represent a literal `"` inside a string. Since SMT-LIB 2.6 that is
+    /// the only escape: a backslash is an ordinary character, so `"a\"` is a complete literal.
     ///
     /// Note: we preserve the quotes in the returned atom string (e.g. `"hello world"`).
     fn parse_string_literal(&mut self) -> Result<Sexp, ParseError> {
@@ -234,13 +234,6 @@ impl<'a> Parser<'a> {
                     }
                     self.i += 1;
                     break;
-                }
-                Some(b'\\') => {
-                    // Best-effort: consume escape + following byte if present.
-                    self.i += 1;
-                    if self.peek().is_some() {
-                        self.i += 1;
-                    }
                 }
                 Some(_) => {
                     self.i += 1;
@@ -320,5 +313,21 @@ mod tests {
     fn parse_string_literal_atom_with_embedded_quote() {
         let s = parse_one("(\"a\"\"b\" x)").unwrap();
         assert_eq!(s.to_string(), "(\"a\"\"b\" x)");
+    }
+
+    /// SMT-LIB 2.6+ section 3.1: `""` is the only escape in a string literal,
+    /// and a backslash is an ordinary character, so `"a\"` is complete.
+    #[test]
+    fn string_literal_ending_in_backslash_parses() {
+        let s = parse_one(r#"(define-fun s () String "a\")"#).unwrap();
+        let Sexp::List(items) = s else {
+            panic!("expected a list, got {s:?}");
+        };
+        assert_eq!(items.len(), 5);
+        assert_eq!(items[4], Sexp::atom(r#""a\""#));
+        assert_eq!(
+            parse_one(r#"("\" x)"#).unwrap(),
+            Sexp::list(vec![Sexp::atom(r#""\""#), Sexp::atom("x")])
+        );
     }
 }

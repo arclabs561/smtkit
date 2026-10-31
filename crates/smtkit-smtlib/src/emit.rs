@@ -14,9 +14,61 @@ pub fn sort_to_sexp(sort: &smtkit_core::Sort) -> Sexp {
     }
 }
 
+/// SMT-LIB 2.7 section 3.1 reserved words: the basic set plus every command
+/// name of figure 3.7. None of them is a simple symbol.
+const RESERVED_WORDS: &[&str] = &[
+    "BINARY",
+    "DECIMAL",
+    "HEXADECIMAL",
+    "NUMERAL",
+    "STRING",
+    "_",
+    "!",
+    "as",
+    "lambda",
+    "let",
+    "exists",
+    "forall",
+    "match",
+    "par",
+    "assert",
+    "check-sat",
+    "check-sat-assuming",
+    "declare-const",
+    "declare-datatype",
+    "declare-datatypes",
+    "declare-fun",
+    "declare-sort",
+    "declare-sort-parameter",
+    "define-const",
+    "define-fun",
+    "define-fun-rec",
+    "define-funs-rec",
+    "define-sort",
+    "echo",
+    "exit",
+    "get-assertions",
+    "get-assignment",
+    "get-info",
+    "get-model",
+    "get-option",
+    "get-proof",
+    "get-unsat-assumptions",
+    "get-unsat-core",
+    "get-value",
+    "pop",
+    "push",
+    "reset",
+    "reset-assertions",
+    "set-info",
+    "set-logic",
+    "set-option",
+];
+
 /// Render `name` as an SMT-LIB symbol, wrapping it in `|...|` unless it is a
 /// simple symbol (non-empty, no leading digit, only letters, digits and
-/// ``~!@$%^&*_-+=<>.?/``). A name already wrapped in bars is returned as is.
+/// ``~!@$%^&*_-+=<>.?/``, and not a reserved word such as `let` or
+/// `assert`). A name already wrapped in bars is returned as is.
 ///
 /// # Panics
 ///
@@ -39,7 +91,8 @@ pub fn quote_symbol(name: &str) -> String {
     let simple = name.chars().next().is_some_and(|c| !c.is_ascii_digit())
         && name
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "~!@$%^&*_-+=<>.?/".contains(c));
+            .all(|c| c.is_ascii_alphanumeric() || "~!@$%^&*_-+=<>.?/".contains(c))
+        && !RESERVED_WORDS.contains(&name);
     let quoted = name.len() >= 2 && name.starts_with('|') && name.ends_with('|');
     if simple || quoted {
         name.to_string()
@@ -136,6 +189,38 @@ mod tests {
         let mut ctx = Ctx::new();
         let v = ctx.var("my var", Sort::Int);
         assert_eq!(term_to_sexp(&ctx, v).to_string(), "|my var|");
+    }
+
+    /// SMT-LIB 2.7 section 3.1: a simple symbol is not a reserved word, and
+    /// every command name is a reserved word.
+    #[test]
+    fn reserved_words_are_bar_quoted() {
+        for w in [
+            "_",
+            "!",
+            "as",
+            "lambda",
+            "let",
+            "exists",
+            "forall",
+            "match",
+            "par",
+            "BINARY",
+            "DECIMAL",
+            "HEXADECIMAL",
+            "NUMERAL",
+            "STRING",
+            "assert",
+            "check-sat",
+            "define-const",
+            "push",
+            "set-logic",
+        ] {
+            assert_eq!(quote_symbol(w), format!("|{w}|"), "reserved word {w:?}");
+        }
+        // Only exact matches are reserved.
+        assert_eq!(quote_symbol("asserts"), "asserts");
+        assert_eq!(quote_symbol("Let"), "Let");
     }
 
     #[test]

@@ -239,6 +239,18 @@ mod tests {
         );
     }
 
+    /// z3 4.8.12 output for `(assert (= s "a\"))(check-sat)(get-model)`.
+    #[test]
+    fn parse_z3_output_accepts_model_with_string_ending_in_backslash() {
+        let stdout = "sat\n(\n  (define-fun s () String\n    \"a\\\")\n)\n";
+        let out = parse_z3_output(stdout, "").expect("parse");
+        assert_eq!(out.status, Status::Sat);
+        assert_eq!(
+            out.model.unwrap().to_string(),
+            r#"((define-fun s () String "a\"))"#
+        );
+    }
+
     #[test]
     fn extract_first_response_handles_strings_and_bar_symbols() {
         let txt = r#"(a "x) y" |p(q)|) (b c)"#;
