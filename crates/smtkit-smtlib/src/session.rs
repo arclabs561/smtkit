@@ -512,16 +512,9 @@ impl SmtlibSession {
                         i += 1;
                     }
                     ScanState::InString => {
-                        if b == b'\\' {
-                            // Best-effort: consume escape + following byte if present.
-                            i += 1;
-                            if i < bytes.len() {
-                                i += 1;
-                            }
-                            continue;
-                        }
                         if b == b'"' {
-                            // SMT-LIB escapes `"` as `""`.
+                            // SMT-LIB escapes `"` as `""`, its only string escape
+                            // since 2.6; a backslash is an ordinary character.
                             if i + 1 < bytes.len() && bytes[i + 1] == b'"' {
                                 i += 2;
                                 continue;
@@ -1260,5 +1253,19 @@ mod process_tests {
             Err(SessionError::ResponseTooLarge { limit: 3 })
         ));
         assert!(session.child.try_wait().unwrap().is_some());
+    }
+
+    /// SMT-LIB 2.6+ has no backslash escape in string literals, so `"a\"` is
+    /// complete. This is z3 4.8.12's model for `(assert (= s "a\"))`.
+    #[test]
+    fn model_with_string_ending_in_backslash_is_read() {
+        let mut session = shell_session(
+            "while IFS= read -r line; do case \"$line\" in *get-model*) \
+             printf '(\\n  (define-fun s () String\\n    \"a\\\\\")\\n)\\n' ;; esac; done",
+        );
+        session.set_wall_timeout(Duration::from_secs(2));
+
+        let model = session.get_model().expect("model must be read");
+        assert_eq!(model.to_string(), r#"((define-fun s () String "a\"))"#);
     }
 }
