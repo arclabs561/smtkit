@@ -5,6 +5,23 @@
 
 SMT solver toolkit.
 
+## Install
+
+```toml
+[dependencies]
+smtkit = "0.2"
+```
+
+The default build only generates SMT-LIB2 scripts. Solver features:
+
+| Feature | What it enables |
+|---|---|
+| `z3-bin` | Run an external `z3` binary on `PATH` |
+| `z3-inproc` | In-process Z3 through Rust bindings (may need system Z3 headers) |
+| `z3-inproc-bundled` | `z3-inproc`, building Z3 from source |
+| `z3-inproc-gh-release` | `z3-inproc`, downloading a prebuilt Z3 at build time |
+| `z3-auto` | Alias for `z3-inproc-gh-release` |
+
 ## Library example: build an SMT-LIB2 script (no solver needed)
 
 ```rust
@@ -24,28 +41,39 @@ assert!(text.contains("(assert (< x (- 3)))"));
 
 ## Quickstart: probe solver capabilities
 
-If you have a solver on PATH (e.g. `z3`), run:
+`smtkit-ci` is not published to crates.io. With a solver on `PATH` (for
+example `z3`), run it from a clone of this repository:
 
 ```bash
 cargo install --path crates/smtkit-ci --bin smtkit-ci --force
 smtkit-ci probe
 ```
 
-If you prefer to run from this repo without installing:
+Or without installing:
 
 ```bash
 cargo run -p smtkit-ci -- probe
 ```
 
-This prints JSON like:
+It prints the solver command line it used and a best-effort capability matrix.
+With Z3 5.3.2:
 
-- which command line was used (e.g. `z3 -in -smt2`)
-- a **capability matrix** (best-effort):
-  - `check_sat_assuming`
-  - `get_model`
-  - `get_unsat_core`
-  - `get_proof` (solver-dependent; primarily a debugging hook)
-  - whether `:named` assertions appear in cores
+```text
+{
+  "available": true,
+  "caps": {
+    "check_sat_assuming": true,
+    "get_model": true,
+    "get_proof": true,
+    "get_unsat_core": true,
+    "named_assertions_in_core": true
+  },
+  ...
+  "used": "z3 -in -smt2"
+}
+```
+
+`get_proof` is solver-dependent and mainly a debugging hook.
 
 You can also generate repro scripts:
 
@@ -62,61 +90,51 @@ smtkit-ci probe --output-json /tmp/smtkit_probe.json \
   --emit-demo-smt2 --demo-kind unsat-core --demo-smt2-out /tmp/demo.smt2
 ```
 
-If you want `smtkit-ci` to **run** the demo and capture a bounded result (including a proof preview),
-use:
+To run the demo and capture a bounded result, including a proof preview:
 
 ```bash
 smtkit-ci probe --capture-demo --demo-kind unsat-proof --demo-proof-max-chars 12000
 ```
 
-## Replayable Solver Runs
-
-SMT integrations need stable scripts, recorded solver options, and reproducible
-solver runs. `smtkit` emits SMT-LIB scripts and records probe output so failures
-can be replayed.
-
 ## Crates
 
-- **`smtkit`**: facade crate you depend on (re-exports the rest).
-- **`smtkit-core`**: typed, backend-agnostic constraint IR.
-- **`smtkit-smtlib`**: SMT-LIB2 s-expressions, script building, and an incremental stdio session.
-- **`smtkit-z3`**: optional in-process Z3 backend (feature-gated).
-- **`smtkit-ci`**: small CLI for CI + debugging (`probe`, `smoke`).
+- `smtkit`: the crate you depend on. Re-exports `smtkit-core` and
+  `smtkit-smtlib`, plus `smtkit-z3` with `z3-inproc`.
+- `smtkit-core`: typed, backend-agnostic constraint IR.
+- `smtkit-smtlib`: SMT-LIB2 s-expressions, script building, and an incremental stdio session.
+- `smtkit-z3`: in-process Z3 backend.
+- `smtkit-ci`: CLI for CI and debugging (`probe`, `smoke`); not published.
 
-## Notes on solver “proofs”
+## Solver proofs
 
-Some solvers support `(get-proof)` behind `:produce-proofs`. `smtkit` exposes this via the session API
-and the capability probe (`get_proof`) so you can **capture** proof objects for debugging/provenance.
+Some solvers support `(get-proof)` behind `:produce-proofs`. `smtkit` exposes
+this through the session API and the capability probe (`get_proof`) so you can
+capture proof objects for debugging.
 
-This is **not** a proof checker: verification of solver proofs (e.g. Alethe proof checking) is a separate layer.
+`smtkit` does not check proofs. Verifying solver proofs (for example, Alethe
+proof checking) is a separate layer.
 
 ## Examples
 
-See [`examples/README.md`](examples/README.md) for the full gallery: each
-example states the question it answers, the run command, feature requirements,
-and real sample output.
+[`examples/README.md`](examples/README.md) lists each example with its run
+command, required feature, and sample output. Examples without a feature emit
+SMT-LIB2 scripts and need no solver; `z3-bin` examples run a system `z3`;
+`z3-inproc` examples run Z3 in process.
 
-Runnable examples live in [`examples/`](examples/). Unmarked examples emit
-SMT-LIB2 scripts and need no solver installed (smtkit's core posture); `z3-bin`
-examples shell out to a system `z3`; `z3-inproc` examples drive Z3 in process.
+```bash
+cargo run --release --example graph_coloring
+```
 
-- `graph_coloring` encodes a small graph-coloring instance, the textbook constraint problem behind register allocation and exam scheduling.
-- `maximize_red` is a small optimization-modulo-theories instance: maximize an objective subject to constraints.
-- `ontology_consistency` checks EL++ ontology consistency as SMT, the satisfiability core of description-logic knowledge-base validation.
-- `enumerate_graph_coloring_session` enumerates every valid coloring of a triangle via an incremental SMT-LIB session, the blocking-clause pattern for counting or sampling all solutions rather than just one. (needs `z3-bin`)
-- `session_determinism_hooks` is a smoke test for repeatable solver runs when the solver build and configuration are held fixed. (needs `z3-bin`)
-- `enumerate_graph_coloring_inproc` is the enumeration above run through the in-process backend. (needs `z3-inproc`)
-- `pareto_frontier` enumerates the Pareto frontier of a multi-objective problem, the shape of trade-off analysis in resource allocation. (needs `z3-inproc`)
-- `constrained_soft_path` builds constraint terms, filters a fixed routing graph,
-  and computes soft shortest-path marginals. It does not invoke a solver.
-
-## Versioning + pinning policy (recommended)
-
-- **Apps should lock**: use a compatible requirement such as `smtkit = "0.2"`
-  and commit `Cargo.lock` to record the resolved versions.
-- **Libraries**: use semver ranges for dependencies. A library’s lockfile does
-  not constrain downstream applications.
-- **Pre-release testing**: for unreleased changes, temporarily pin a git tag (e.g. `v0.1.1`) or a git rev, then switch back to crates.io on release.
+```text
+(set-logic QF_LIA)
+(set-option :produce-models true)
+(declare-const c0 Int)
+(assert (and (>= c0 0) (< c0 3)))
+...
+(assert (distinct c0 c1 c2))
+(check-sat)
+(get-model)
+```
 
 ## License
 
