@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## smtkit 0.2.1 and smtkit-smtlib 0.2.1 - 2026-11-03
 
 ### Fixed
 
