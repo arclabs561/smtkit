@@ -17,7 +17,7 @@ The default build only generates SMT-LIB2 scripts. Solver features:
 | Feature | What it enables |
 |---|---|
 | `z3-bin` | Run an external `z3` binary on `PATH` |
-| `z3-inproc` | In-process Z3 through Rust bindings (may need system Z3 headers) |
+| `z3-inproc` | In-process Z3 through Rust bindings (requires Rust 1.88 or newer and may need system Z3 headers) |
 | `z3-inproc-bundled` | `z3-inproc`, building Z3 from source |
 | `z3-inproc-gh-release` | `z3-inproc`, downloading a prebuilt Z3 at build time |
 | `z3-auto` | Alias for `z3-inproc-gh-release` |
